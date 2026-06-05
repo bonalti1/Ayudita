@@ -623,6 +623,17 @@ svg {
   padding: 16px;
 }
 
+.memory-manage-status {
+  margin: 0 16px;
+  padding: 9px 11px;
+  border: 1px solid rgba(18, 135, 90, 0.18);
+  border-radius: var(--radius);
+  background: #f0fbf5;
+  color: #116243;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .trusted-answer-card {
   display: grid;
   gap: 12px;
@@ -690,7 +701,14 @@ svg {
   gap: 8px;
 }
 
-.proof-source-strip button {
+.proof-source-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.proof-source-open,
+.proof-source-action {
   min-height: 44px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -702,12 +720,18 @@ svg {
   text-align: left;
 }
 
-.proof-source-strip button span {
+.proof-source-open span {
   display: block;
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.proof-source-action {
+  color: #116243;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .trusted-answer-actions {
@@ -723,6 +747,13 @@ svg {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.trusted-answer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .compact-list .memory-item {
@@ -1466,6 +1497,18 @@ svg {
   background: var(--green);
   color: #fff;
   font-weight: 800;
+}
+
+.small-button.danger {
+  border-color: rgba(185, 28, 28, 0.18);
+  background: #fff7f7;
+  color: #9f1d1d;
+}
+
+.small-button:disabled,
+.proof-source-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 @media (max-width: 980px) {

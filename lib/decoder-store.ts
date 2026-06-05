@@ -27,6 +27,7 @@ const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
 const PENDING_CREDENTIAL_LABEL_PREFIX = "whatsapp:pending_credential_label:";
 const PENDING_SOURCE_DOCUMENT_PREFIX = "whatsapp:pending_source_document:";
 const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
+const TRUSTED_ANSWER_PRIMARY_PREFIX = "trusted_answer:primary:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -619,6 +620,19 @@ export async function disableDocumentMemory(input: {
   });
 }
 
+export async function rememberTrustedAnswerPrimary(input: {
+  documentId: string;
+  userPhone: string;
+  trustedAnswerId: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${TRUSTED_ANSWER_PRIMARY_PREFIX}${input.trustedAnswerId}`,
+    answer: "active"
+  });
+}
+
 export async function rememberPendingDocumentLabel(input: {
   documentId: string;
   userPhone: string;
@@ -835,6 +849,10 @@ function memoryMetadataForDocument(
   ).length;
   const memoryActivity = questions.filter(isMemoryUseQuestion);
   const lastMemoryUse = memoryActivity[0]?.created_at ?? null;
+  const trustedAnswerPrimary = questions.find(
+    (question) =>
+      question.answer === "active" && question.question?.startsWith(TRUSTED_ANSWER_PRIMARY_PREFIX)
+  );
 
   return {
     has_credential_facts: facts.some(isCredentialFact),
@@ -842,6 +860,8 @@ function memoryMetadataForDocument(
     memory_disabled: memoryDisabled,
     memory_last_used_at: lastMemoryUse,
     memory_use_count: memoryActivity.length,
+    trusted_answer_primary: Boolean(trustedAnswerPrimary),
+    trusted_answer_primary_at: trustedAnswerPrimary?.created_at ?? null,
     source_request_count: sourceRequestCount
   };
 }
@@ -876,6 +896,7 @@ function isMemoryUseQuestion(question: MemoryQuestionRow) {
   if (text.startsWith(PENDING_CREDENTIAL_LABEL_PREFIX)) return false;
   if (text.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)) return false;
   if (text.startsWith(LAST_MEMORY_DOCUMENT_PREFIX)) return false;
+  if (text.startsWith(TRUSTED_ANSWER_PRIMARY_PREFIX)) return false;
   return true;
 }
 

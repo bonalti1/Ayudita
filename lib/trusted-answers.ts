@@ -10,6 +10,7 @@ export type TrustedAnswerSource = {
   source: string;
   source_sent_count: number;
   memory_use_count: number;
+  is_primary: boolean;
   is_main: boolean;
 };
 
@@ -116,6 +117,7 @@ function trustedAnswerFromDraft(draft: GroupDraft, isUnlocked: boolean): Trusted
       source: document.source,
       source_sent_count: document.source_request_count ?? 0,
       memory_use_count: document.memory_use_count ?? 0,
+      is_primary: Boolean(document.trusted_answer_primary),
       is_main: index === 0
     }))
   } satisfies TrustedAnswerGroup;
@@ -202,6 +204,13 @@ function documentTitle(document: DecoderDocumentDetail) {
 }
 
 function compareDocumentsForMainSource(a: DecoderDocumentDetail, b: DecoderDocumentDetail) {
+  if (a.trusted_answer_primary && !b.trusted_answer_primary) return -1;
+  if (b.trusted_answer_primary && !a.trusted_answer_primary) return 1;
+  if (a.trusted_answer_primary_at && b.trusted_answer_primary_at) {
+    const selectedAtDifference =
+      new Date(b.trusted_answer_primary_at).getTime() - new Date(a.trusted_answer_primary_at).getTime();
+    if (selectedAtDifference !== 0) return selectedAtDifference;
+  }
   const bScore = (b.memory_use_count ?? 0) * 10 + (b.source_request_count ?? 0) * 5;
   const aScore = (a.memory_use_count ?? 0) * 10 + (a.source_request_count ?? 0) * 5;
   if (bScore !== aScore) return bScore - aScore;

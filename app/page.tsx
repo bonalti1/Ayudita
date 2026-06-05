@@ -96,9 +96,15 @@ type TrustedAnswerGroup = {
     source: string;
     source_sent_count: number;
     memory_use_count: number;
+    is_primary: boolean;
     is_main: boolean;
   }>;
 };
+
+type TrustedAnswerMemoryAction =
+  | { action: "rename"; documentId: string; alias: string }
+  | { action: "disable"; documentId: string; reason?: string }
+  | { action: "set_primary"; documentId: string; trustedAnswerId: string };
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -119,11 +125,13 @@ export default function Home() {
   const [memoryQuestion, setMemoryQuestion] = useState("What is my office WiFi password?");
   const [memoryAnswer, setMemoryAnswer] = useState<MemoryQueryResult | null>(null);
   const [memoryAskStatus, setMemoryAskStatus] = useState("");
+  const [memoryManageStatus, setMemoryManageStatus] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("en");
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockStatus, setUnlockStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isAskingMemory, setIsAskingMemory] = useState(false);
+  const [isManagingMemory, setIsManagingMemory] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isTrustedAnswersLoading, setIsTrustedAnswersLoading] = useState(true);
@@ -184,6 +192,34 @@ export default function Home() {
     const data = (await response.json()) as { document: DecoderDocumentDetail };
     setSelectedDocument(data.document);
     setUnlockStatus("");
+  }
+
+  async function manageTrustedAnswer(input: TrustedAnswerMemoryAction) {
+    setIsManagingMemory(true);
+    setMemoryManageStatus("");
+
+    try {
+      const response = await fetch(`/api/documents/${input.documentId}/memory`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          input.action === "rename"
+            ? { action: input.action, alias: input.alias }
+            : input.action === "disable"
+              ? { action: input.action, reason: input.reason }
+              : { action: input.action, trustedAnswerId: input.trustedAnswerId }
+        )
+      });
+
+      if (!response.ok) throw new Error("Memory update failed.");
+
+      await Promise.all([refreshDocuments(input.documentId), refreshTrustedAnswers()]);
+      setMemoryManageStatus(ui("Memory updated.", "Memoria actualizada."));
+    } catch {
+      setMemoryManageStatus(ui("Could not update memory.", "No se pudo actualizar la memoria."));
+    } finally {
+      setIsManagingMemory(false);
+    }
   }
 
   async function unlockSensitiveInfo(event: React.FormEvent<HTMLFormElement>) {
@@ -541,6 +577,7 @@ export default function Home() {
                     </div>
                     <span className="status ready">{ui(`${trustedAnswers.length} trusted answers`, `${trustedAnswers.length} respuestas confiables`)}</span>
                   </div>
+                  {memoryManageStatus ? <div className="memory-manage-status">{memoryManageStatus}</div> : null}
                   <div className="trusted-answer-list">
                     {isTrustedAnswersLoading ? <div className="empty-state">{ui("Loading trusted answers...", "Cargando respuestas confiables...")}</div> : null}
                     {!isTrustedAnswersLoading && topTrustedAnswers.length === 0 ? (
@@ -559,6 +596,8 @@ export default function Home() {
                         key={answer.id}
                         answer={answer}
                         language={uiLanguage}
+                        isManaging={isManagingMemory}
+                        onManage={manageTrustedAnswer}
                         onOpenSource={(documentId) => {
                           setActiveView("memory");
                           setSelectedId(documentId);
@@ -969,10 +1008,14 @@ function InfoField({ label, value }: { label: string; value: string }) {
 function TrustedAnswerCard({
   answer,
   language,
+  isManaging,
+  onManage,
   onOpenSource
 }: {
   answer: TrustedAnswerGroup;
   language: UiLanguage;
+  isManaging: boolean;
+  onManage: (input: TrustedAnswerMemoryAction) => void;
   onOpenSource: (documentId: string) => void;
 }) {
   const isSpanish = language === "es";
@@ -988,6 +1031,24 @@ function TrustedAnswerCard({
   const sourceSentLabel = isSpanish
     ? `${answer.source_sent_count} ${answer.source_sent_count === 1 ? "vez enviada" : "veces enviada"}`
     : `${answer.source_sent_count} ${answer.source_sent_count === 1 ? "source send" : "source sends"}`;
+  const renameMemory = () => {
+    const nextName = window.prompt(
+      isSpanish ? "Nuevo nombre para esta memoria" : "New name for this memory",
+      answer.title
+    );
+    const alias = nextName?.trim();
+    if (!alias || alias === answer.title) return;
+    onManage({ action: "rename", documentId: answer.main_document_id, alias });
+  };
+  const disableMemory = () => {
+    const confirmed = window.confirm(
+      isSpanish
+        ? `Desactivar "${answer.title}" para que Ayudita no lo use como respuesta confiable?`
+        : `Disable "${answer.title}" so Ayudita stops using it as a trusted answer?`
+    );
+    if (!confirmed) return;
+    onManage({ action: "disable", documentId: answer.main_document_id, reason: "disabled_from_dashboard" });
+  };
 
   return (
     <article className="trusted-answer-card">
@@ -1025,10 +1086,31 @@ function TrustedAnswerCard({
       {answer.sources.length > 1 ? (
         <div className="proof-source-strip">
           {answer.sources.slice(0, 3).map((source) => (
-            <button key={source.document_id} onClick={() => onOpenSource(source.document_id)}>
-              {source.is_main ? (isSpanish ? "Principal" : "Main") : (isSpanish ? "Respaldo" : "Backup")}
-              <span>{shortDate(source.created_at, language)}</span>
-            </button>
+            <div className="proof-source-card" key={source.document_id}>
+              <button className="proof-source-open" onClick={() => onOpenSource(source.document_id)}>
+                {source.is_main
+                  ? source.is_primary
+                    ? isSpanish ? "Principal elegido" : "Chosen main"
+                    : isSpanish ? "Principal" : "Main"
+                  : isSpanish ? "Respaldo" : "Backup"}
+                <span>{shortDate(source.created_at, language)}</span>
+              </button>
+              {!source.is_main ? (
+                <button
+                  className="proof-source-action"
+                  disabled={isManaging}
+                  onClick={() =>
+                    onManage({
+                      action: "set_primary",
+                      documentId: source.document_id,
+                      trustedAnswerId: answer.id
+                    })
+                  }
+                >
+                  {isSpanish ? "Hacer principal" : "Set main"}
+                </button>
+              ) : null}
+            </div>
           ))}
         </div>
       ) : null}
@@ -1038,9 +1120,17 @@ function TrustedAnswerCard({
             ? `Prueba: ${proofLabel}. Último uso: ${answer.last_used_at ? shortDate(answer.last_used_at, language) : "aún no usado"}`
             : `Proof: ${proofLabel}. Last used: ${answer.last_used_at ? shortDate(answer.last_used_at, language) : "not used yet"}`}
         </span>
-        <button className="small-button" onClick={() => onOpenSource(answer.main_document_id)}>
-          {isSpanish ? "Abrir prueba" : "Open proof"}
-        </button>
+        <div className="trusted-answer-tools">
+          <button className="small-button" disabled={isManaging} onClick={renameMemory}>
+            {isSpanish ? "Renombrar" : "Rename"}
+          </button>
+          <button className="small-button danger" disabled={isManaging} onClick={disableMemory}>
+            {isSpanish ? "Desactivar" : "Disable"}
+          </button>
+          <button className="small-button" onClick={() => onOpenSource(answer.main_document_id)}>
+            {isSpanish ? "Abrir prueba" : "Open proof"}
+          </button>
+        </div>
       </div>
     </article>
   );

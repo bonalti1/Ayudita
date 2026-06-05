@@ -56,6 +56,8 @@ export type DecoderDocumentSummary = DecoderDocument & {
   memory_disabled?: boolean;
   memory_last_used_at?: string | null;
   memory_use_count?: number;
+  trusted_answer_primary?: boolean;
+  trusted_answer_primary_at?: string | null;
   source_request_count?: number;
 };
 
@@ -71,5 +73,7 @@ export type DecoderDocumentDetail = DecoderDocument & {
   memory_disabled?: boolean;
   memory_last_used_at?: string | null;
   memory_use_count?: number;
+  trusted_answer_primary?: boolean;
+  trusted_answer_primary_at?: string | null;
   source_request_count?: number;
 };
