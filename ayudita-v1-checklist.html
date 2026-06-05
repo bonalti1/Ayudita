@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ayudita V1 - Checklist de Construccion</title>
+    <style>
+      @page {
+        margin: 0.55in;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: #162230;
+        background: #ffffff;
+        font-family: Arial, Helvetica, sans-serif;
+        line-height: 1.35;
+      }
+
+      .page {
+        max-width: 8in;
+        margin: 0 auto;
+      }
+
+      header {
+        border-bottom: 3px solid #18a46d;
+        padding-bottom: 18px;
+        margin-bottom: 20px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .brand img {
+        width: 190px;
+        height: auto;
+      }
+
+      .label {
+        color: #18a46d;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 12px 0 8px;
+        color: #203346;
+        font-size: 30px;
+        line-height: 1.1;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: #536171;
+        font-size: 15px;
+        max-width: 660px;
+      }
+
+      .north-star {
+        margin: 18px 0 22px;
+        padding: 16px 18px;
+        border: 1px solid #cbd7df;
+        border-left: 6px solid #18a46d;
+        border-radius: 8px;
+        background: #f7fbf9;
+      }
+
+      .north-star strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #203346;
+        font-size: 16px;
+      }
+
+      .north-star p {
+        margin: 0;
+        color: #536171;
+        font-size: 14px;
+      }
+
+      h2 {
+        margin: 26px 0 12px;
+        color: #203346;
+        font-size: 19px;
+      }
+
+      .item {
+        break-inside: avoid;
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 12px;
+        margin: 0 0 12px;
+        padding: 13px 14px;
+        border: 1px solid #d9e1e7;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .box {
+        width: 18px;
+        height: 18px;
+        margin-top: 3px;
+        border: 2px solid #203346;
+        border-radius: 4px;
+      }
+
+      .item h3 {
+        margin: 0 0 4px;
+        color: #203346;
+        font-size: 15px;
+      }
+
+      .item p {
+        margin: 0;
+        color: #536171;
+        font-size: 13.5px;
+      }
+
+      .why {
+        margin-top: 7px;
+        color: #203346;
+        font-size: 13px;
+      }
+
+      .why span {
+        color: #18a46d;
+        font-weight: 800;
+      }
+
+      .footer {
+        margin-top: 28px;
+        padding-top: 14px;
+        border-top: 1px solid #d9e1e7;
+        color: #647282;
+        font-size: 12px;
+      }
+
+      .small-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .pill {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #eef7f3;
+        color: #0f7a50;
+        font-size: 11px;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <div class="brand">
+          <img src="public/ayudita-red.png" alt="Ayudita" />
+          <div>
+            <div class="label">V1 Build Checklist</div>
+            <h1>Ayudita Document Decoder</h1>
+            <p class="subtitle">
+              A simple print checklist for building the first version: one document comes in,
+              Ayudita stores it, reads it, explains it in Spanish, and shows the proof.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <section class="north-star">
+        <strong>North Star</strong>
+        <p>
+          Ayudita should help a family understand one scary letter in under two minutes without
+          making up anything the letter did not say.
+        </p>
+      </section>
+
+      <h2>Phase 1 - Product Focus</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>1. Lock the V1 scope</h3>
+          <p>
+            V1 should only decode one document at a time. It should not try to be a full memory
+            app yet.
+          </p>
+          <div class="why"><span>Why it matters:</span> A smaller product is easier to test with real families.</div>
+          <span class="pill">Done when: everyone agrees what V1 will and will not do.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>2. Keep raw documents as the source of truth</h3>
+          <p>
+            Every photo or PDF must be saved before the AI tries to read it. If AI fails, the
+            original file is still safe.
+          </p>
+          <div class="why"><span>Why it matters:</span> We can rebuild AI results later, but we cannot rebuild a lost document.</div>
+          <span class="pill">Done when: the file is stored before extraction starts.</span>
+        </div>
+      </section>
+
+      <h2>Phase 2 - Supabase Foundation</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>3. Create the V1 database tables</h3>
+          <p>
+            Add tables for documents, facts, explanations, document text, and user questions.
+          </p>
+          <div class="why"><span>Why it matters:</span> These tables match the new trust-first architecture.</div>
+          <span class="pill">Done when: Supabase has the V1 schema running.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>4. Create private document storage</h3>
+          <p>
+            Create a private Supabase bucket called raw-documents for original files.
+          </p>
+          <div class="why"><span>Why it matters:</span> User letters are private and sensitive.</div>
+          <span class="pill">Done when: files upload to a private bucket.</span>
+        </div>
+      </section>
+
+      <h2>Phase 3 - Web Upload Flow</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>5. Add document upload in the dashboard</h3>
+          <p>
+            Let the user upload a photo or PDF from the web app. Start with images first if needed.
+          </p>
+          <div class="why"><span>Why it matters:</span> This lets us test before WhatsApp is fully connected.</div>
+          <span class="pill">Done when: a user can upload a real letter.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>6. Show document status</h3>
+          <p>
+            Show clear states like received, extracted, explained, failed, and pending review.
+          </p>
+          <div class="why"><span>Why it matters:</span> The user and team should always know where the document is.</div>
+          <span class="pill">Done when: every document has a visible status.</span>
+        </div>
+      </section>
+
+      <h2>Phase 4 - AI Extraction</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>7. Build the extraction stage</h3>
+          <p>
+            The vision model reads the image and returns only structured JSON. It does not write
+            the final answer.
+          </p>
+          <div class="why"><span>Why it matters:</span> Separating reading from explaining makes the system safer.</div>
+          <span class="pill">Done when: extraction creates facts with source text.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>8. Store facts with proof</h3>
+          <p>
+            Every important fact needs a value, a source quote, and a label like verbatim,
+            computed, inferred, or unknown.
+          </p>
+          <div class="why"><span>Why it matters:</span> Ayudita should earn trust by showing evidence.</div>
+          <span class="pill">Done when: facts are stored with provenance.</span>
+        </div>
+      </section>
+
+      <h2>Phase 5 - AI Explanation</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>9. Build the explanation stage</h3>
+          <p>
+            The explanation model should only see extracted facts. It should never see the image
+            directly.
+          </p>
+          <div class="why"><span>Why it matters:</span> It cannot explain facts that were not extracted.</div>
+          <span class="pill">Done when: explanations are based only on facts.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>10. Use the six required sections</h3>
+          <p>
+            The answer must include what the letter is, why it was sent, important dates, what to
+            do, evidence, and what could not be determined.
+          </p>
+          <div class="why"><span>Why it matters:</span> This gives users a calm, predictable answer every time.</div>
+          <span class="pill">Done when: every explanation follows the same structure.</span>
+        </div>
+      </section>
+
+      <h2>Phase 6 - Review Dashboard</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>11. Turn the inbox into a review queue</h3>
+          <p>
+            The dashboard should show documents waiting for review, not general life memories.
+          </p>
+          <div class="why"><span>Why it matters:</span> The first version needs human review before replies go out.</div>
+          <span class="pill">Done when: pending documents are easy to review.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>12. Show the explanation and the evidence</h3>
+          <p>
+            The dashboard should show the Spanish explanation next to the source text that supports it.
+          </p>
+          <div class="why"><span>Why it matters:</span> This is what makes Ayudita feel trustworthy.</div>
+          <span class="pill">Done when: reviewers can compare answer and proof.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>13. Add review actions</h3>
+          <p>
+            Add buttons for approve, flag, ask for clearer photo, and regenerate.
+          </p>
+          <div class="why"><span>Why it matters:</span> Real letters are messy, and the team needs control.</div>
+          <span class="pill">Done when: a reviewer can decide the next step.</span>
+        </div>
+      </section>
+
+      <h2>Phase 7 - WhatsApp</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>14. Receive WhatsApp images</h3>
+          <p>
+            When a user sends a photo, the webhook should download the image and save it first.
+          </p>
+          <div class="why"><span>Why it matters:</span> WhatsApp is the easiest place for families to use Ayudita.</div>
+          <span class="pill">Done when: WhatsApp photos appear in the review queue.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>15. Send approved replies back</h3>
+          <p>
+            After human review, Ayudita should send the Spanish explanation back through WhatsApp.
+          </p>
+          <div class="why"><span>Why it matters:</span> The user gets help in the same place they sent the letter.</div>
+          <span class="pill">Done when: approved explanations can be sent by WhatsApp.</span>
+        </div>
+      </section>
+
+      <h2>Phase 8 - Safety And Testing</h2>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>16. Handle blurry or unreadable photos</h3>
+          <p>
+            If the photo is not clear, Ayudita should say it cannot read enough and ask for a
+            better photo.
+          </p>
+          <div class="why"><span>Why it matters:</span> Saying “I do not know” is safer than guessing.</div>
+          <span class="pill">Done when: bad photos fail gracefully.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>17. Log follow-up questions</h3>
+          <p>
+            Save what users ask after the explanation, because those questions show what to build next.
+          </p>
+          <div class="why"><span>Why it matters:</span> Real users will write the phase-two roadmap for us.</div>
+          <span class="pill">Done when: questions are saved in user_questions.</span>
+        </div>
+      </section>
+
+      <section class="item">
+        <div class="box"></div>
+        <div>
+          <h3>18. Test with 10 real families</h3>
+          <p>
+            Test with real letters. Watch especially for wrong dates, missing evidence, and unclear replies.
+          </p>
+          <div class="why"><span>Why it matters:</span> The best product signal comes from real people using it.</div>
+          <span class="pill">Done when: 10 users have tried it and given feedback.</span>
+        </div>
+      </section>
+
+      <div class="footer">
+        <strong>Build rule:</strong> Do not add memory, timelines, agents, vector search, or multi-document reasoning before this checklist works well.
+        The decoder comes first. The bigger personal cloud can be built later from the raw documents we save today.
+      </div>
+    </main>
+  </body>
+</html>
