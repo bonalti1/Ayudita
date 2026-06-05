@@ -15,9 +15,18 @@ export async function POST(_request: Request, context: RouteContext) {
   } catch (error) {
     console.error("Failed to extract decoder document.", error);
 
-    const message = error instanceof Error ? error.message : "Failed to extract document.";
+    const message = errorMessage(error);
     const status = message === "Document not found." ? 404 : 500;
 
     return NextResponse.json({ error: message }, { status });
   }
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Failed to extract document.";
 }

@@ -336,7 +336,6 @@ async function storeExtraction(documentId: string, extraction: DecoderExtraction
     .update({
       status: "extracted",
       document_type: documentTypeTitle(extraction),
-      document_category: extraction.document_category,
       language: extraction.language_detected
     })
     .eq("id", documentId);
@@ -373,13 +372,17 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
     });
   };
 
-  single("document_category", {
-    value: categoryLabel(extraction.document_category),
-    provenance: "INFERRED",
-    source_text: extraction.document_type.source_text
-  });
+  single(
+    "document_type",
+    {
+      value: categoryLabel(extraction.document_category),
+      provenance: "INFERRED",
+      source_text: extraction.document_type.source_text
+    },
+    "document_category"
+  );
   single("document_type", extraction.document_type);
-  single("document_summary", extraction.detected_purpose, "detected_purpose");
+  single("action_required", extraction.detected_purpose, "detected_purpose");
   single("issuing_agency", extraction.issuing_agency);
   single("recipient_name", extraction.recipient_name);
   single("case_number", extraction.case_or_receipt_number);
@@ -415,8 +418,8 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
   for (const fact of extraction.general_facts) {
     rows.push({
       document_id: documentId,
-      fact_type: fact.category,
-      label: fact.label,
+      fact_type: factTypeForGeneralFact(fact.category),
+      label: `${fact.category}:${fact.label}`,
       fact_value: fact.value,
       provenance_type: fact.provenance,
       source_text: fact.source_text,
@@ -439,6 +442,12 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
   }
 
   return rows;
+}
+
+function factTypeForGeneralFact(category: string) {
+  if (category === "date") return "date";
+  if (category === "amount") return "fee";
+  return "action_required";
 }
 
 function documentTypeTitle(extraction: DecoderExtraction) {
