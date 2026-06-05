@@ -7,6 +7,7 @@ import {
   extractDecoderDocument,
   findWhatsAppMemoryDocument,
   getDecoderDocument,
+  getLatestPendingDocumentLabel,
   getLatestPendingSensitiveQuestion,
   getLatestPendingMemorySearch,
   hasProcessedWhatsAppMessage,
@@ -14,7 +15,9 @@ import {
   markWhatsAppMessageProcessed,
   rememberPendingMemorySearch,
   rememberDocumentAlias,
+  rememberPendingDocumentLabel,
   rememberPendingSensitiveQuestion,
+  resolvePendingDocumentLabel,
   resolvePendingMemorySearch,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
@@ -149,6 +152,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (unlockResult) return unlockResult;
+
+    const documentLabelResult = await processTextDocumentLabelMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (documentLabelResult) return documentLabelResult;
 
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
@@ -291,6 +302,7 @@ async function processStoredDocumentForWhatsApp(documentId: string, to: string) 
   const explainedDocument = await explainDecoderDocument(documentId);
   await reviewDecoderDocument(documentId, "approve");
   await sendTextIfConfigured(to, explainedDocument.explanations[0]?.body ?? "Documento explicado.");
+  await askForDocumentLabel(documentId, to, explainedDocument.language);
 
   return {
     status: "explained",
@@ -344,6 +356,7 @@ async function processTextUnlockMessage(input: {
 
     if (answer) {
       await sendTextIfConfigured(input.from, answer.body);
+      await askForDocumentLabel(pendingDocument.id, input.from, pendingDocument.language);
 
       return {
         ok: true,
@@ -358,12 +371,57 @@ async function processTextUnlockMessage(input: {
     input.from,
     explainedDocument.explanations[0]?.body ?? "No pude generar la explicacion."
   );
+  await askForDocumentLabel(pendingDocument.id, input.from, explainedDocument.language);
 
   return {
     ok: true,
     messageId: input.messageId ?? null,
     documentId: pendingDocument.id,
     action: "sensitive_explanation_unlocked_and_sent"
+  };
+}
+
+async function processTextDocumentLabelMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const label = input.text.trim();
+  if (!label || looksLikeNewDocumentQuestion(label)) return null;
+
+  const pending = await getLatestPendingDocumentLabel(input.from);
+  if (!pending) return null;
+
+  if (!isDoNotSaveMemoryLabel(label) && looksLikeFollowUpQuestion(label)) return null;
+
+  const cleanedLabel = documentLabelFromText(label);
+  if (!cleanedLabel) return null;
+
+  await resolvePendingDocumentLabel(pending.id);
+
+  if (isDoNotSaveMemoryLabel(cleanedLabel)) {
+    await sendTextIfConfigured(input.from, labelSkippedMessage(languageForText(label)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: pending.documentId,
+      action: "document_label_skipped"
+    };
+  }
+
+  await rememberDocumentAlias({
+    documentId: pending.documentId,
+    userPhone: input.from,
+    alias: cleanedLabel
+  });
+  await sendTextIfConfigured(input.from, labelSavedMessage(cleanedLabel, languageForText(label)));
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: pending.documentId,
+    action: "document_label_saved"
   };
 }
 
@@ -587,6 +645,31 @@ function needsMemoryClarification(text: string) {
   return !hasSpecificContext;
 }
 
+async function askForDocumentLabel(documentId: string, to: string, language?: string | null) {
+  await rememberPendingDocumentLabel({
+    documentId,
+    userPhone: to
+  });
+  await sendTextIfConfigured(to, documentLabelPrompt(language === "en" ? "en" : "es"));
+}
+
+function documentLabelFromText(text: string) {
+  const cleaned = text
+    .trim()
+    .replace(/^(save as|label as|guardar como|etiqueta como)\s+/i, "")
+    .replace(/\s+/g, " ");
+
+  if (cleaned.length > 40) return null;
+  if (cleaned.split(/\s+/).length > 5) return null;
+  return cleaned;
+}
+
+function isDoNotSaveMemoryLabel(label: string) {
+  return /\b(dont save|don't save|do not save|skip|none|nada|no guardar|no save|no memory|sin memoria)\b/i.test(
+    label
+  );
+}
+
 function looksLikeSearchIntent(normalizedText: string) {
   return (
     /[?¿]/.test(normalizedText) ||
@@ -601,6 +684,24 @@ function looksLikeFeedbackMessage(normalizedText: string) {
   return /\b(thank|thanks|gracias|good|perfect|perfecto|ok|okay|always ask|siempre pregunta)\b/.test(
     normalizedText
   );
+}
+
+function documentLabelPrompt(language: "en" | "es") {
+  if (language === "en") {
+    return "For future search, how should I label this document? Reply with a short label like mine, not mine, home, office, business, client, friend, or say do not save for memory.";
+  }
+
+  return "Para buscarlo despues, como quieres etiquetar este documento? Responde con algo corto como mio, no es mio, casa, oficina, negocio, cliente, amigo, o di no guardar en memoria.";
+}
+
+function labelSavedMessage(label: string, language: "en" | "es") {
+  if (language === "en") return `Got it. I labeled this document as "${label}" for future searches.`;
+  return `Listo. Etiquete este documento como "${label}" para buscarlo despues.`;
+}
+
+function labelSkippedMessage(language: "en" | "es") {
+  if (language === "en") return "Okay. I will not add a memory label for this document.";
+  return "Esta bien. No agregare una etiqueta de memoria para este documento.";
 }
 
 function languageForText(text: string): "en" | "es" {

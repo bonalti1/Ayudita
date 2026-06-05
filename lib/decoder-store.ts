@@ -21,6 +21,7 @@ const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
 const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:";
 const PENDING_MEMORY_SEARCH_PREFIX = "whatsapp:pending_memory_search:";
 const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
+const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -477,6 +478,47 @@ export async function rememberDocumentAlias(input: {
     question: `${DOCUMENT_ALIAS_PREFIX}${alias}`,
     answer: "saved"
   });
+}
+
+export async function rememberPendingDocumentLabel(input: {
+  documentId: string;
+  userPhone: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${PENDING_DOCUMENT_LABEL_PREFIX}${input.documentId}`,
+    answer: "pending_label"
+  });
+}
+
+export async function getLatestPendingDocumentLabel(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id, document_id")
+    .eq("user_phone", userPhone)
+    .eq("answer", "pending_label")
+    .like("question", `${PENDING_DOCUMENT_LABEL_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.document_id) return null;
+
+  return {
+    id: data.id as string,
+    documentId: data.document_id as string
+  };
+}
+
+export async function resolvePendingDocumentLabel(id: string, answer = "resolved") {
+  const supabase = createSupabaseServiceClient();
+
+  const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
+  if (error) throw error;
 }
 
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {
