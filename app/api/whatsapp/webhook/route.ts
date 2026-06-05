@@ -5,9 +5,10 @@ import {
   answerLatestWhatsAppDocumentQuestion,
   explainDecoderDocument,
   extractDecoderDocument,
-  findWhatsAppMemoryDocument,
+  findWhatsAppMemoryDocuments,
   getDecoderDocument,
   getLatestPendingDocumentLabel,
+  getLatestPendingMemorySelection,
   getLatestPendingSensitiveQuestion,
   getLatestPendingMemorySearch,
   hasProcessedWhatsAppMessage,
@@ -16,8 +17,10 @@ import {
   rememberPendingMemorySearch,
   rememberDocumentAlias,
   rememberPendingDocumentLabel,
+  rememberPendingMemorySelection,
   rememberPendingSensitiveQuestion,
   resolvePendingDocumentLabel,
+  resolvePendingMemorySelection,
   resolvePendingMemorySearch,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
@@ -25,6 +28,7 @@ import { env } from "@/lib/env";
 import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-auth";
 import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 import { downloadWhatsAppMedia, sendWhatsAppText, whatsappFileName } from "@/lib/whatsapp";
+import type { DecoderDocumentDetail } from "@/lib/decoder-types";
 
 export const runtime = "nodejs";
 
@@ -152,6 +156,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (unlockResult) return unlockResult;
+
+    const memorySelectionResult = await processTextMemorySelectionMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (memorySelectionResult) return memorySelectionResult;
 
     const documentLabelResult = await processTextDocumentLabelMessage({
       from,
@@ -381,6 +393,50 @@ async function processTextUnlockMessage(input: {
   };
 }
 
+async function processTextMemorySelectionMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const selectedIndex = selectionIndexFromText(input.text);
+  if (selectedIndex === null) return null;
+
+  const pending = await getLatestPendingMemorySelection(input.from);
+  if (!pending) return null;
+
+  const documentId = pending.documentIds[selectedIndex];
+  if (!documentId) {
+    await sendTextIfConfigured(input.from, memorySelectionInvalidMessage(languageForText(pending.question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_selection_invalid"
+    };
+  }
+
+  await resolvePendingMemorySelection(pending.id);
+
+  const document = await getDecoderDocument(documentId);
+  if (!document) {
+    await sendTextIfConfigured(input.from, memoryNotFoundMessage(languageForText(pending.question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_selection_missing_document"
+    };
+  }
+
+  return answerSelectedMemoryDocument({
+    from: input.from,
+    question: pending.question,
+    messageId: input.messageId,
+    document,
+    aliasToRemember: pending.aliasToRemember
+  });
+}
+
 async function processTextDocumentLabelMessage(input: {
   from: string;
   text: string;
@@ -488,10 +544,11 @@ async function answerMemoryQuestion(input: {
   notFoundMessage: string;
   aliasToRemember?: string;
 }) {
-  const document = await findWhatsAppMemoryDocument({
+  const documents = await findWhatsAppMemoryDocuments({
     userPhone: input.from,
     query: input.question
   });
+  const document = documents[0] ?? null;
 
   if (!document) {
     await sendTextIfConfigured(input.from, input.notFoundMessage);
@@ -502,6 +559,43 @@ async function answerMemoryQuestion(input: {
       action: "memory_not_found"
     };
   }
+
+  if (documents.length > 1) {
+    await rememberPendingMemorySelection({
+      userPhone: input.from,
+      question: input.question,
+      documentIds: documents.map((match) => match.id),
+      aliasToRemember: input.aliasToRemember
+    });
+    await sendTextIfConfigured(
+      input.from,
+      memorySelectionMessage(documents, languageForText(input.question))
+    );
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_selection_requested"
+    };
+  }
+
+  return answerSelectedMemoryDocument({
+    from: input.from,
+    question: input.question,
+    messageId: input.messageId,
+    document,
+    aliasToRemember: input.aliasToRemember
+  });
+}
+
+async function answerSelectedMemoryDocument(input: {
+  from: string;
+  question: string;
+  messageId?: string;
+  document: DecoderDocumentDetail;
+  aliasToRemember?: string;
+}) {
+  const document = input.document;
 
   if (hasSensitiveFacts(document.facts) && document.review_status !== "reviewed") {
     if (input.aliasToRemember) {
@@ -627,6 +721,12 @@ function looksLikeNewDocumentQuestion(text: string) {
   return looksLikeMemoryQuestion(text) || isReviewerPasswordValid(text.trim());
 }
 
+function selectionIndexFromText(text: string) {
+  const match = text.trim().match(/^([1-3])[\).:\s]*$/);
+  if (!match) return null;
+  return Number(match[1]) - 1;
+}
+
 function needsMemoryClarification(text: string) {
   const normalized = text
     .toLowerCase()
@@ -730,6 +830,48 @@ function memoryClarificationMessage(language: "en" | "es") {
   }
 
   return "Cual quieres decir: casa, oficina, negocio o la red de un amigo? Tambien puedes mandarme el nombre de la red si lo sabes.";
+}
+
+function memorySelectionMessage(documents: DecoderDocumentDetail[], language: "en" | "es") {
+  const options = documents
+    .slice(0, 3)
+    .map((document, index) => `${index + 1}. ${documentSelectionLabel(document)}`)
+    .join("\n");
+
+  if (language === "en") {
+    return `I found a few possible saved documents:\n${options}\nReply with 1, 2, or 3 so I answer from the right one.`;
+  }
+
+  return `Encontre varios documentos guardados que podrian ser:\n${options}\nResponde con 1, 2 o 3 para contestar del correcto.`;
+}
+
+function memorySelectionInvalidMessage(language: "en" | "es") {
+  if (language === "en") return "Choose one of the document numbers I listed: 1, 2, or 3.";
+  return "Escoge uno de los numeros que te mande: 1, 2 o 3.";
+}
+
+function documentSelectionLabel(document: DecoderDocumentDetail) {
+  const label =
+    document.document_type?.trim() ||
+    document.document_category
+      ?.split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") ||
+    "Document";
+
+  return `${label} - ${formatDocumentDate(document.created_at)}`;
+}
+
+function formatDocumentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "saved document";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function memoryNotFoundMessage(language: "en" | "es") {

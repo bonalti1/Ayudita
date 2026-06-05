@@ -22,6 +22,7 @@ const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:"
 const PENDING_MEMORY_SEARCH_PREFIX = "whatsapp:pending_memory_search:";
 const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
 const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
+const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -310,6 +311,15 @@ export async function findWhatsAppMemoryDocument(input: {
   userPhone: string;
   query: string;
 }): Promise<DecoderDocumentDetail | null> {
+  const matches = await findWhatsAppMemoryDocuments(input);
+  return matches[0] ?? null;
+}
+
+export async function findWhatsAppMemoryDocuments(input: {
+  userPhone: string;
+  query: string;
+  limit?: number;
+}): Promise<DecoderDocumentDetail[]> {
   const documents = await listDecoderDocuments();
   const candidates = documents.filter(
     (document) =>
@@ -318,13 +328,13 @@ export async function findWhatsAppMemoryDocument(input: {
       (document.status === "extracted" || document.status === "explained")
   );
 
-  if (!candidates.length) return null;
+  if (!candidates.length) return [];
 
   const details = (
     await Promise.all(candidates.slice(0, 30).map((document) => getDecoderDocument(document.id)))
   ).filter((document): document is DecoderDocumentDetail => Boolean(document?.facts.length));
 
-  if (!details.length) return null;
+  if (!details.length) return [];
 
   const aliasesByDocumentId = await getDocumentAliasesById(details.map((document) => document.id));
 
@@ -335,8 +345,11 @@ export async function findWhatsAppMemoryDocument(input: {
     }))
     .sort((a, b) => b.score - a.score);
 
-  const best = ranked[0];
-  return best && best.score >= memoryMatchThreshold(input.query) ? best.document : null;
+  const threshold = memoryMatchThreshold(input.query);
+  return ranked
+    .filter((match) => match.score >= threshold)
+    .slice(0, input.limit ?? 3)
+    .map((match) => match.document);
 }
 
 export async function answerDecoderDocumentQuestion(input: {
@@ -515,6 +528,60 @@ export async function getLatestPendingDocumentLabel(userPhone: string) {
 }
 
 export async function resolvePendingDocumentLabel(id: string, answer = "resolved") {
+  const supabase = createSupabaseServiceClient();
+
+  const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function rememberPendingMemorySelection(input: {
+  userPhone: string;
+  question: string;
+  documentIds: string[];
+  aliasToRemember?: string;
+}) {
+  await logUserQuestion({
+    documentId: null,
+    userPhone: input.userPhone,
+    question: `${PENDING_MEMORY_SELECTION_PREFIX}${input.question}`,
+    answer: JSON.stringify({
+      documentIds: input.documentIds.slice(0, 3),
+      aliasToRemember: input.aliasToRemember
+    })
+  });
+}
+
+export async function getLatestPendingMemorySelection(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id, question, answer")
+    .eq("user_phone", userPhone)
+    .like("question", `${PENDING_MEMORY_SELECTION_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.answer || !data?.question) return null;
+
+  const parsed = safeJsonParse(data.answer as string);
+  const documentIds = Array.isArray(parsed?.documentIds)
+    ? parsed.documentIds.filter((id: unknown): id is string => typeof id === "string")
+    : [];
+
+  if (!documentIds.length) return null;
+
+  return {
+    id: data.id as string,
+    question: (data.question as string).slice(PENDING_MEMORY_SELECTION_PREFIX.length),
+    documentIds,
+    aliasToRemember: typeof parsed?.aliasToRemember === "string" ? parsed.aliasToRemember : undefined
+  };
+}
+
+export async function resolvePendingMemorySelection(id: string, answer = "resolved") {
   const supabase = createSupabaseServiceClient();
 
   const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
@@ -838,6 +905,14 @@ async function getDocumentAliasesById(documentIds: string[]) {
 
 function cleanAlias(alias: string) {
   return alias.trim().slice(0, 80);
+}
+
+function safeJsonParse(value: string) {
+  try {
+    return JSON.parse(value) as { documentIds?: unknown; aliasToRemember?: unknown };
+  } catch {
+    return null;
+  }
 }
 
 function memoryMatchThreshold(query: string) {
