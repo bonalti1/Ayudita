@@ -63,6 +63,7 @@ export type DecoderDocumentDetail = DecoderDocument & {
   facts: DecoderFact[];
   explanations: DecoderExplanation[];
   document_text: DecoderDocumentText | null;
+  source_url?: string | null;
   has_sensitive_info?: boolean;
   sensitive_info_locked?: boolean;
   has_credential_facts?: boolean;

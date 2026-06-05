@@ -777,6 +777,78 @@ svg {
   padding: 20px;
 }
 
+.source-preview {
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfaf8;
+  overflow: hidden;
+}
+
+.source-preview img {
+  display: block;
+  width: 100%;
+  max-height: 440px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.source-preview figcaption {
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.source-preview-empty {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.source-preview-empty svg {
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border-radius: var(--radius);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.source-preview-empty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.source-preview-empty span {
+  overflow-wrap: anywhere;
+}
+
+.source-preview-empty a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  margin-top: 2px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.source-preview.locked .source-preview-empty svg {
+  background: var(--red-soft);
+  color: #9f2424;
+}
+
 .summary {
   margin: 0 0 16px;
   color: var(--muted);

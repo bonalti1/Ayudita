@@ -630,6 +630,7 @@ export default function Home() {
                       <p>{documentMeta(selectedDocument, uiLanguage)}</p>
                     </div>
                     <div className="detail-body">
+                      <SourcePreview document={selectedDocument} language={uiLanguage} />
                       <p className="summary">
                         {selectedDocument.explanations[0]?.body ??
                           ui(
@@ -813,6 +814,69 @@ function InfoField({ label, value }: { label: string; value: string }) {
     <div className="field">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SourcePreview({
+  document,
+  language
+}: {
+  document: DecoderDocumentDetail;
+  language: UiLanguage;
+}) {
+  const isSpanish = language === "es";
+  const isImage = document.mime_type?.startsWith("image/");
+  const isPdf = document.mime_type === "application/pdf";
+  const title = documentTitle(document, language);
+
+  if (document.sensitive_info_locked) {
+    return (
+      <div className="source-preview locked">
+        <div className="source-preview-empty">
+          <Icon>{iconPaths.shield}</Icon>
+          <strong>{isSpanish ? "Vista previa bloqueada" : "Preview locked"}</strong>
+          <span>
+            {isSpanish
+              ? "Esta fuente puede mostrar información sensible. Desbloquéala para ver la imagen o documento original."
+              : "This source may show sensitive information. Unlock it to view the original image or document."}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (document.source_url && isImage) {
+    return (
+      <figure className="source-preview">
+        <img src={document.source_url} alt={title} />
+        <figcaption>
+          {isSpanish ? "Imagen original guardada" : "Saved original image"}
+        </figcaption>
+      </figure>
+    );
+  }
+
+  return (
+    <div className="source-preview document-preview">
+      <div className="source-preview-empty">
+        <Icon>{iconPaths.doc}</Icon>
+        <strong>
+          {isPdf
+            ? isSpanish
+              ? "PDF original guardado"
+              : "Saved original PDF"
+            : isSpanish
+              ? "Fuente original guardada"
+              : "Saved original source"}
+        </strong>
+        <span>{document.storage_path}</span>
+        {document.source_url ? (
+          <a href={document.source_url} target="_blank" rel="noreferrer">
+            {isSpanish ? "Abrir original" : "Open original"}
+          </a>
+        ) : null}
+      </div>
     </div>
   );
 }
