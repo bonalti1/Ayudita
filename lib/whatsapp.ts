@@ -79,6 +79,38 @@ export async function sendWhatsAppText(to: string, body: string) {
   }
 }
 
+export async function sendWhatsAppImageLink(input: {
+  to: string;
+  imageUrl: string;
+  caption?: string;
+}) {
+  const token = requireWhatsAppAccessToken();
+  const phoneNumberId = requireWhatsAppPhoneNumberId();
+  const graphBase = whatsappGraphBase();
+
+  const response = await fetch(`${graphBase}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "image",
+      image: {
+        link: input.imageUrl,
+        caption: input.caption?.slice(0, 1024)
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await readWhatsAppError(response);
+    throw new Error(formatWhatsAppError("Could not send WhatsApp image.", response.status, error));
+  }
+}
+
 export async function sendWhatsAppReplyButtons(input: {
   to: string;
   body: string;

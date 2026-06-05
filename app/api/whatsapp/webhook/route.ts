@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  createRawDocumentSignedUrl,
   createRawDecoderDocument,
   answerDecoderDocumentQuestion,
   answerLatestWhatsAppDocumentQuestion,
@@ -32,6 +33,7 @@ import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-a
 import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 import {
   downloadWhatsAppMedia,
+  sendWhatsAppImageLink,
   sendWhatsAppReplyButtons,
   sendWhatsAppText,
   whatsappFileName
@@ -656,6 +658,11 @@ async function answerMemoryQuestion(input: {
       documentIds: documents.map((match) => match.id),
       aliasToRemember: input.aliasToRemember
     });
+    await sendMemoryPreviewImagesIfUseful({
+      to: input.from,
+      question: input.question,
+      documents
+    });
     await sendButtonsIfConfigured({
       to: input.from,
       body: memorySelectionMessage(documents, languageForText(input.question)),
@@ -676,6 +683,40 @@ async function answerMemoryQuestion(input: {
     document,
     aliasToRemember: input.aliasToRemember
   });
+}
+
+async function sendMemoryPreviewImagesIfUseful(input: {
+  to: string;
+  question: string;
+  documents: DecoderDocumentDetail[];
+}) {
+  if (!isCredentialMemoryQuestion(input.question)) return;
+
+  const previewDocuments = input.documents
+    .slice(0, 3)
+    .filter((document) => document.mime_type?.startsWith("image/"));
+  if (!previewDocuments.length) return;
+
+  await sendTextIfConfigured(
+    input.to,
+    memoryPreviewIntroMessage(previewDocuments.length, languageForText(input.question))
+  );
+
+  for (const [index, document] of previewDocuments.entries()) {
+    try {
+      const signedUrl = await createRawDocumentSignedUrl(document);
+      await sendImageIfConfigured({
+        to: input.to,
+        imageUrl: signedUrl,
+        caption: memoryPreviewCaption(index + 1, document, languageForText(input.question))
+      });
+    } catch (error) {
+      console.error("WhatsApp memory preview image failed.", {
+        documentId: document.id,
+        error
+      });
+    }
+  }
 }
 
 async function answerSelectedMemoryDocument(input: {
@@ -1030,6 +1071,20 @@ function memorySelectionButtons(documents: DecoderDocumentDetail[]) {
   }));
 }
 
+function memoryPreviewIntroMessage(count: number, language: "en" | "es") {
+  if (language === "en") {
+    return `I found ${count} possible saved images. I will send them back so you can choose the right one.`;
+  }
+
+  return `Encontre ${count} imagenes guardadas posibles. Te las voy a mandar para que escojas la correcta.`;
+}
+
+function memoryPreviewCaption(index: number, document: DecoderDocumentDetail, language: "en" | "es") {
+  const label = documentSelectionLabel(document);
+  if (language === "en") return `Option ${index}: ${label}`;
+  return `Opcion ${index}: ${label}`;
+}
+
 function memorySelectionInvalidMessage(language: "en" | "es") {
   if (language === "en") return "Choose one of the document numbers I listed: 1, 2, or 3.";
   return "Escoge uno de los numeros que te mande: 1, 2 o 3.";
@@ -1081,6 +1136,14 @@ async function sendTextIfConfigured(to: string, body: string) {
     return;
   }
   await sendWhatsAppText(to, body);
+}
+
+async function sendImageIfConfigured(input: { to: string; imageUrl: string; caption?: string }) {
+  if (!env.whatsappAccessToken || !env.whatsappPhoneNumberId) {
+    console.log("WhatsApp image reply skipped because credentials are missing.");
+    return;
+  }
+  await sendWhatsAppImageLink(input);
 }
 
 async function sendButtonsIfConfigured(input: {

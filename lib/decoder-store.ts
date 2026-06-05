@@ -112,6 +112,16 @@ export async function getDecoderDocument(documentId: string): Promise<DecoderDoc
   };
 }
 
+export async function createRawDocumentSignedUrl(document: Pick<DecoderDocument, "storage_path">) {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.storage
+    .from(RAW_DOCUMENTS_BUCKET)
+    .createSignedUrl(document.storage_path, 60 * 60);
+
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export async function createRawDecoderDocument(input: CreateRawDocumentInput) {
   const supabase = createSupabaseServiceClient();
   const safeFileName = sanitizeFileName(input.fileName);
