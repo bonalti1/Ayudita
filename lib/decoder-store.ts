@@ -17,6 +17,7 @@ import { sendWhatsAppText } from "./whatsapp";
 
 const RAW_DOCUMENTS_BUCKET = "raw-documents";
 const DEFAULT_WEB_USER_PHONE = "web-demo";
+const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -314,6 +315,33 @@ export async function answerLatestWhatsAppDocumentQuestion(input: {
   };
 }
 
+export async function hasProcessedWhatsAppMessage(messageId: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id")
+    .eq("question", `${WHATSAPP_MESSAGE_PREFIX}${messageId}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function markWhatsAppMessageProcessed(input: {
+  messageId: string;
+  userPhone: string;
+  action?: string;
+}) {
+  await logUserQuestion({
+    documentId: null,
+    userPhone: input.userPhone,
+    question: `${WHATSAPP_MESSAGE_PREFIX}${input.messageId}`,
+    answer: input.action ?? "processing"
+  });
+}
+
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {
   if (action === "approve") return "reviewed";
   if (action === "reset") return "pending";
@@ -345,7 +373,7 @@ async function logWhatsAppSend(document: DecoderDocumentDetail, body: string) {
 }
 
 async function logUserQuestion(input: {
-  documentId: string;
+  documentId: string | null;
   userPhone: string;
   question: string;
   answer: string;

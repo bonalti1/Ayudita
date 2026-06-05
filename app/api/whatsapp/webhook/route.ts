@@ -5,7 +5,9 @@ import {
   explainDecoderDocument,
   extractDecoderDocument,
   getDecoderDocument,
+  hasProcessedWhatsAppMessage,
   listDecoderDocuments,
+  markWhatsAppMessageProcessed,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
@@ -108,6 +110,9 @@ async function processMessage(message: WhatsAppMessage) {
     type: message.type ?? "unknown"
   });
 
+  const duplicateResult = await dedupeWhatsAppMessage(message, from);
+  if (duplicateResult) return duplicateResult;
+
   if (message.type === "image") {
     return ingestMediaMessage({
       from,
@@ -162,6 +167,33 @@ async function processMessage(message: WhatsAppMessage) {
     type: message.type ?? "unknown",
     action: "prompted_for_document"
   };
+}
+
+async function dedupeWhatsAppMessage(message: WhatsAppMessage, from: string) {
+  if (!message.id) return null;
+
+  if (await hasProcessedWhatsAppMessage(message.id)) {
+    console.log("Duplicate WhatsApp message ignored.", {
+      messageId: message.id,
+      from,
+      type: message.type ?? "unknown"
+    });
+
+    return {
+      ok: true,
+      messageId: message.id,
+      type: message.type ?? "unknown",
+      action: "duplicate_ignored"
+    };
+  }
+
+  await markWhatsAppMessageProcessed({
+    messageId: message.id,
+    userPhone: from,
+    action: message.type ?? "unknown"
+  });
+
+  return null;
 }
 
 async function ingestMediaMessage(input: {
