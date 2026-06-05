@@ -24,6 +24,7 @@ const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
 const DOCUMENT_MEMORY_DISABLED_PREFIX = "whatsapp:document_memory_disabled:";
 const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
 const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
+const PENDING_CREDENTIAL_LABEL_PREFIX = "whatsapp:pending_credential_label:";
 const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
 
 type CreateRawDocumentInput = {
@@ -646,6 +647,52 @@ export async function getLatestPendingMemorySelection(userPhone: string) {
 }
 
 export async function resolvePendingMemorySelection(id: string, answer = "resolved") {
+  const supabase = createSupabaseServiceClient();
+
+  const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function rememberPendingCredentialLabel(input: {
+  documentId: string;
+  userPhone: string;
+  alias: string;
+}) {
+  const alias = cleanAlias(input.alias);
+  if (!alias) return;
+
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${PENDING_CREDENTIAL_LABEL_PREFIX}${alias}`,
+    answer: "pending_credential_label"
+  });
+}
+
+export async function getLatestPendingCredentialLabel(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id, document_id, question")
+    .eq("user_phone", userPhone)
+    .eq("answer", "pending_credential_label")
+    .like("question", `${PENDING_CREDENTIAL_LABEL_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.document_id || !data?.question) return null;
+
+  return {
+    id: data.id as string,
+    documentId: data.document_id as string,
+    alias: (data.question as string).slice(PENDING_CREDENTIAL_LABEL_PREFIX.length)
+  };
+}
+
+export async function resolvePendingCredentialLabel(id: string, answer = "resolved") {
   const supabase = createSupabaseServiceClient();
 
   const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);

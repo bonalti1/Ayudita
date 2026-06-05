@@ -9,6 +9,7 @@ import {
   extractDecoderDocument,
   findWhatsAppMemoryDocuments,
   getDecoderDocument,
+  getLatestPendingCredentialLabel,
   getLatestMemoryDocumentReference,
   getLatestPendingDocumentLabel,
   getLatestPendingMemorySelection,
@@ -20,10 +21,12 @@ import {
   rememberPendingMemorySearch,
   rememberDocumentAlias,
   rememberLastMemoryDocument,
+  rememberPendingCredentialLabel,
   rememberPendingDocumentLabel,
   rememberPendingMemorySelection,
   rememberPendingSensitiveQuestion,
   resolvePendingDocumentLabel,
+  resolvePendingCredentialLabel,
   resolvePendingMemorySelection,
   resolvePendingMemorySearch,
   reviewDecoderDocument
@@ -200,6 +203,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (memorySelectionResult) return memorySelectionResult;
+
+    const credentialLabelResult = await processTextCredentialLabelConfirmationMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (credentialLabelResult) return credentialLabelResult;
 
     const documentLabelResult = await processTextDocumentLabelMessage({
       from,
@@ -485,6 +496,51 @@ async function processTextMemorySelectionMessage(input: {
   });
 }
 
+async function processTextCredentialLabelConfirmationMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const choice = confirmationChoiceFromText(input.text);
+  if (!choice) return null;
+
+  const pending = await getLatestPendingCredentialLabel(input.from);
+  if (!pending) return null;
+
+  await resolvePendingCredentialLabel(pending.id, choice === "yes" ? "confirmed" : "declined");
+
+  if (choice === "no") {
+    await sendTextIfConfigured(
+      input.from,
+      credentialLabelDeclinedMessage(languageForText(input.text))
+    );
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: pending.documentId,
+      action: "credential_label_declined"
+    };
+  }
+
+  await rememberDocumentAlias({
+    documentId: pending.documentId,
+    userPhone: input.from,
+    alias: pending.alias
+  });
+  await sendTextIfConfigured(
+    input.from,
+    credentialLabelConfirmedMessage(pending.alias, languageForText(input.text))
+  );
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: pending.documentId,
+    action: "credential_label_confirmed"
+  };
+}
+
 async function processTextDocumentLabelMessage(input: {
   from: string;
   text: string;
@@ -729,14 +785,6 @@ async function answerSelectedMemoryDocument(input: {
   const document = input.document;
 
   if (hasSensitiveFacts(document.facts) && document.review_status !== "reviewed") {
-    if (input.aliasToRemember) {
-      await rememberDocumentAlias({
-        documentId: document.id,
-        userPhone: input.from,
-        alias: input.aliasToRemember
-      });
-    }
-
     await rememberPendingSensitiveQuestion({
       documentId: document.id,
       userPhone: input.from,
@@ -760,7 +808,12 @@ async function answerSelectedMemoryDocument(input: {
 
   if (!answer) return null;
 
-  if (input.aliasToRemember) {
+  const credentialAliasToConfirm =
+    input.aliasToRemember && isCredentialMemoryQuestion(input.question)
+      ? input.aliasToRemember
+      : null;
+
+  if (input.aliasToRemember && !credentialAliasToConfirm) {
     await rememberDocumentAlias({
       documentId: answer.document.id,
       userPhone: input.from,
@@ -773,6 +826,19 @@ async function answerSelectedMemoryDocument(input: {
     userPhone: input.from
   });
   await sendTextIfConfigured(input.from, answer.body);
+
+  if (credentialAliasToConfirm) {
+    await rememberPendingCredentialLabel({
+      documentId: answer.document.id,
+      userPhone: input.from,
+      alias: credentialAliasToConfirm
+    });
+    await sendButtonsIfConfigured({
+      to: input.from,
+      body: credentialLabelConfirmationMessage(credentialAliasToConfirm, languageForText(input.question)),
+      buttons: credentialLabelConfirmationButtons(languageForText(input.question))
+    });
+  }
 
   return {
     ok: true,
@@ -862,6 +928,17 @@ function selectionIndexFromText(text: string) {
   const match = text.trim().match(/^(?:memory_select_)?([1-3])[\).:\s]*$/i);
   if (!match) return null;
   return Number(match[1]) - 1;
+}
+
+function confirmationChoiceFromText(text: string): "yes" | "no" | null {
+  const normalized = normalizeMemoryText(text).trim();
+  if (/^(?:credential_label_yes|yes|y|si|s|confirm|confirmed|guardar|save)$/i.test(normalized)) {
+    return "yes";
+  }
+  if (/^(?:credential_label_no|no|n|skip|not now|no guardar|dont save|do not save)$/i.test(normalized)) {
+    return "no";
+  }
+  return null;
 }
 
 function needsMemoryClarification(text: string) {
@@ -984,6 +1061,38 @@ function documentLabelButtons(language: "en" | "es") {
 function labelSavedMessage(label: string, language: "en" | "es") {
   if (language === "en") return `Got it. I labeled this document as "${label}" for future searches.`;
   return `Listo. Etiquete este documento como "${label}" para buscarlo despues.`;
+}
+
+function credentialLabelConfirmationMessage(label: string, language: "en" | "es") {
+  if (language === "en") {
+    return `Should I remember this as "${label}" WiFi for next time?`;
+  }
+
+  return `Quieres que recuerde esto como WiFi de "${label}" para la proxima vez?`;
+}
+
+function credentialLabelConfirmationButtons(language: "en" | "es") {
+  if (language === "en") {
+    return [
+      { id: "credential_label_yes", title: "Yes" },
+      { id: "credential_label_no", title: "No" }
+    ];
+  }
+
+  return [
+    { id: "credential_label_yes", title: "Si" },
+    { id: "credential_label_no", title: "No" }
+  ];
+}
+
+function credentialLabelConfirmedMessage(label: string, language: "en" | "es") {
+  if (language === "en") return `Got it. I will remember that as "${label}" WiFi.`;
+  return `Listo. Lo voy a recordar como WiFi de "${label}".`;
+}
+
+function credentialLabelDeclinedMessage(language: "en" | "es") {
+  if (language === "en") return "Okay. I will not save that WiFi label.";
+  return "Esta bien. No voy a guardar esa etiqueta de WiFi.";
 }
 
 function memoryLabelSavedMessage(label: string, language: "en" | "es") {
