@@ -8,10 +8,13 @@ import {
   findWhatsAppMemoryDocument,
   getDecoderDocument,
   getLatestPendingSensitiveQuestion,
+  getLatestPendingMemorySearch,
   hasProcessedWhatsAppMessage,
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
+  rememberPendingMemorySearch,
   rememberPendingSensitiveQuestion,
+  resolvePendingMemorySearch,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
@@ -145,6 +148,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (unlockResult) return unlockResult;
+
+    const memoryClarificationResult = await processTextMemoryClarificationMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (memoryClarificationResult) return memoryClarificationResult;
 
     const memoryResult = await processTextMemoryMessage({
       from,
@@ -355,6 +366,31 @@ async function processTextUnlockMessage(input: {
   };
 }
 
+async function processTextMemoryClarificationMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const clarification = input.text.trim();
+  if (!clarification || looksLikeNewDocumentQuestion(clarification)) return null;
+
+  const pending = await getLatestPendingMemorySearch(input.from);
+  if (!pending) return null;
+
+  await resolvePendingMemorySearch(pending.id);
+
+  const combinedQuestion = `${pending.query} ${clarification}`;
+  const result = await answerMemoryQuestion({
+    from: input.from,
+    question: combinedQuestion,
+    messageId: input.messageId,
+    notFoundMessage: memoryStillNotFoundMessage(languageForText(combinedQuestion))
+  });
+
+  if (result) return { ...result, action: `${result.action}_after_clarification` };
+  return null;
+}
+
 async function processTextMemoryMessage(input: {
   from: string;
   text: string;
@@ -363,13 +399,41 @@ async function processTextMemoryMessage(input: {
   const question = input.text.trim();
   if (!question || !looksLikeMemoryQuestion(question)) return null;
 
+  if (needsMemoryClarification(question)) {
+    await rememberPendingMemorySearch({
+      userPhone: input.from,
+      query: question
+    });
+    await sendTextIfConfigured(input.from, memoryClarificationMessage(languageForText(question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_clarification_requested"
+    };
+  }
+
+  return answerMemoryQuestion({
+    from: input.from,
+    question,
+    messageId: input.messageId,
+    notFoundMessage: memoryNotFoundMessage(languageForText(question))
+  });
+}
+
+async function answerMemoryQuestion(input: {
+  from: string;
+  question: string;
+  messageId?: string;
+  notFoundMessage: string;
+}) {
   const document = await findWhatsAppMemoryDocument({
     userPhone: input.from,
-    query: question
+    query: input.question
   });
 
   if (!document) {
-    await sendTextIfConfigured(input.from, memoryNotFoundMessage(languageForText(question)));
+    await sendTextIfConfigured(input.from, input.notFoundMessage);
 
     return {
       ok: true,
@@ -382,9 +446,9 @@ async function processTextMemoryMessage(input: {
     await rememberPendingSensitiveQuestion({
       documentId: document.id,
       userPhone: input.from,
-      question
+      question: input.question
     });
-    await sendTextIfConfigured(input.from, sensitivePasswordRequestMessage(languageForText(question)));
+    await sendTextIfConfigured(input.from, sensitivePasswordRequestMessage(languageForText(input.question)));
 
     return {
       ok: true,
@@ -397,7 +461,7 @@ async function processTextMemoryMessage(input: {
   const answer = await answerDecoderDocumentQuestion({
     documentId: document.id,
     userPhone: input.from,
-    question
+    question: input.question
   });
 
   if (!answer) return null;
@@ -480,6 +544,28 @@ function looksLikeMemoryQuestion(text: string) {
   );
 }
 
+function looksLikeNewDocumentQuestion(text: string) {
+  return looksLikeMemoryQuestion(text) || isReviewerPasswordValid(text.trim());
+}
+
+function needsMemoryClarification(text: string) {
+  const normalized = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const credentialRequest =
+    /\b(wifi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(normalized);
+  if (!credentialRequest) return false;
+
+  const hasSpecificContext =
+    /\b(home|house|office|work|business|friend|neighbor|casa|hogar|oficina|trabajo|negocio|amigo|amiga|vecino|vecina)\b/.test(
+      normalized
+    ) || /\b[A-Z0-9][A-Z0-9_-]{3,}\b/.test(text);
+
+  return !hasSpecificContext;
+}
+
 function languageForText(text: string): "en" | "es" {
   const normalized = text.toLowerCase();
   if (/[¿¡áéíóúñ]/i.test(text)) return "es";
@@ -500,12 +586,28 @@ function sensitivePasswordRequestMessage(language: "en" | "es") {
   return "Este documento tiene informacion sensible. Responde con la contraseña correcta de revision para revelarla.";
 }
 
+function memoryClarificationMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Which one do you mean: home, office, business, or a friend's network? You can also send the network name if you know it.";
+  }
+
+  return "Cual quieres decir: casa, oficina, negocio o la red de un amigo? Tambien puedes mandarme el nombre de la red si lo sabes.";
+}
+
 function memoryNotFoundMessage(language: "en" | "es") {
   if (language === "en") {
     return "I could not find a saved document that matches that. You can send a new photo/PDF or ask for the latest document.";
   }
 
   return "No encontre un documento guardado que coincida con eso. Puedes mandar una nueva foto/PDF o preguntar por el documento mas reciente.";
+}
+
+function memoryStillNotFoundMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "I still could not find a saved document with that extra detail. Try the network name, who sent it, or send the photo again.";
+  }
+
+  return "Todavia no encontre un documento guardado con ese detalle. Intenta con el nombre de la red, quien lo mando, o manda la foto otra vez.";
 }
 
 async function sendTextIfConfigured(to: string, body: string) {

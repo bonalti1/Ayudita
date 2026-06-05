@@ -19,6 +19,7 @@ const RAW_DOCUMENTS_BUCKET = "raw-documents";
 const DEFAULT_WEB_USER_PHONE = "web-demo";
 const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
 const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:";
+const PENDING_MEMORY_SEARCH_PREFIX = "whatsapp:pending_memory_search:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -419,6 +420,44 @@ export async function markWhatsAppMessageProcessed(input: {
     question: `${WHATSAPP_MESSAGE_PREFIX}${input.messageId}`,
     answer: input.action ?? "processing"
   });
+}
+
+export async function rememberPendingMemorySearch(input: { userPhone: string; query: string }) {
+  await logUserQuestion({
+    documentId: null,
+    userPhone: input.userPhone,
+    question: `${PENDING_MEMORY_SEARCH_PREFIX}${input.query}`,
+    answer: "pending_clarification"
+  });
+}
+
+export async function getLatestPendingMemorySearch(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id, question")
+    .eq("user_phone", userPhone)
+    .eq("answer", "pending_clarification")
+    .like("question", `${PENDING_MEMORY_SEARCH_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    id: data.id as string,
+    query: (data.question as string).slice(PENDING_MEMORY_SEARCH_PREFIX.length)
+  };
+}
+
+export async function resolvePendingMemorySearch(id: string, answer = "resolved") {
+  const supabase = createSupabaseServiceClient();
+
+  const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
+  if (error) throw error;
 }
 
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {
