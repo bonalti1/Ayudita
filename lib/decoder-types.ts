@@ -51,6 +51,12 @@ export type DecoderDocumentSummary = DecoderDocument & {
   facts_count: number;
   has_sensitive_info?: boolean;
   sensitive_info_locked?: boolean;
+  has_credential_facts?: boolean;
+  memory_aliases?: string[];
+  memory_disabled?: boolean;
+  memory_last_used_at?: string | null;
+  memory_use_count?: number;
+  source_request_count?: number;
 };
 
 export type DecoderDocumentDetail = DecoderDocument & {
@@ -59,4 +65,10 @@ export type DecoderDocumentDetail = DecoderDocument & {
   document_text: DecoderDocumentText | null;
   has_sensitive_info?: boolean;
   sensitive_info_locked?: boolean;
+  has_credential_facts?: boolean;
+  memory_aliases?: string[];
+  memory_disabled?: boolean;
+  memory_last_used_at?: string | null;
+  memory_use_count?: number;
+  source_request_count?: number;
 };

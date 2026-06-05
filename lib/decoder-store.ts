@@ -38,6 +38,13 @@ type CreateRawDocumentInput = {
 
 type ReviewAction = "approve" | "flag" | "clearer_photo" | "reset";
 
+type MemoryQuestionRow = {
+  document_id: string | null;
+  question: string | null;
+  answer: string | null;
+  created_at: string;
+};
+
 export async function listDecoderDocuments(): Promise<DecoderDocumentSummary[]> {
   const supabase = createSupabaseServiceClient();
 
@@ -51,27 +58,52 @@ export async function listDecoderDocuments(): Promise<DecoderDocumentSummary[]> 
 
   const ids = documents.map((document) => document.id);
 
-  const [{ data: facts, error: factsError }, { data: explanations, error: explanationsError }] =
-    await Promise.all([
-      supabase.from("facts").select("document_id").in("document_id", ids),
-      supabase
-        .from("explanations")
-        .select("*")
-        .in("document_id", ids)
-        .order("created_at", { ascending: false })
-    ]);
+  const [
+    { data: facts, error: factsError },
+    { data: explanations, error: explanationsError },
+    { data: memoryQuestions, error: memoryQuestionsError }
+  ] = await Promise.all([
+    supabase.from("facts").select("document_id,fact_type,label").in("document_id", ids),
+    supabase
+      .from("explanations")
+      .select("*")
+      .in("document_id", ids)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("user_questions")
+      .select("document_id, question, answer, created_at")
+      .in("document_id", ids)
+      .order("created_at", { ascending: false })
+  ]);
 
   if (factsError) throw factsError;
   if (explanationsError) throw explanationsError;
+  if (memoryQuestionsError) throw memoryQuestionsError;
+
+  const factsByDocumentId = groupByDocumentId(
+    (facts ?? []).map((fact) => ({
+      document_id: fact.document_id as string | null,
+      fact_type: fact.fact_type as string,
+      label: fact.label as string | null
+    }))
+  );
+  const questionsByDocumentId = groupByDocumentId((memoryQuestions ?? []) as MemoryQuestionRow[]);
 
   return documents.map((document) => {
     const latestExplanation =
       explanations?.find((explanation) => explanation.document_id === document.id) ?? null;
+    const documentFacts = factsByDocumentId.get(document.id) ?? [];
+    const memoryMetadata = memoryMetadataForDocument(
+      document.id,
+      documentFacts,
+      questionsByDocumentId.get(document.id) ?? []
+    );
 
     return {
       ...(document as DecoderDocument),
       latest_explanation: latestExplanation,
-      facts_count: facts?.filter((fact) => fact.document_id === document.id).length ?? 0
+      facts_count: documentFacts.length,
+      ...memoryMetadata
     };
   });
 }
@@ -91,6 +123,7 @@ export async function getDecoderDocument(documentId: string): Promise<DecoderDoc
   const [
     { data: facts, error: factsError },
     { data: explanations, error: explanationsError },
+    { data: memoryQuestions, error: memoryQuestionsError },
     { data: documentText, error: documentTextError }
   ] = await Promise.all([
     supabase.from("facts").select("*").eq("document_id", documentId).order("created_at"),
@@ -99,18 +132,31 @@ export async function getDecoderDocument(documentId: string): Promise<DecoderDoc
       .select("*")
       .eq("document_id", documentId)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("user_questions")
+      .select("document_id, question, answer, created_at")
+      .eq("document_id", documentId)
+      .order("created_at", { ascending: false }),
     supabase.from("document_text").select("*").eq("document_id", documentId).maybeSingle()
   ]);
 
   if (factsError) throw factsError;
   if (explanationsError) throw explanationsError;
+  if (memoryQuestionsError) throw memoryQuestionsError;
   if (documentTextError) throw documentTextError;
+
+  const memoryMetadata = memoryMetadataForDocument(
+    documentId,
+    (facts ?? []).map((fact) => ({ fact_type: fact.fact_type, label: fact.label })),
+    (memoryQuestions ?? []) as MemoryQuestionRow[]
+  );
 
   return {
     ...(document as DecoderDocument),
     facts: facts ?? [],
     explanations: explanations ?? [],
-    document_text: documentText ?? null
+    document_text: documentText ?? null,
+    ...memoryMetadata
   };
 }
 
@@ -739,6 +785,70 @@ export async function resolvePendingSourceDocument(id: string, answer = "resolve
 
   const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
   if (error) throw error;
+}
+
+function memoryMetadataForDocument(
+  documentId: string,
+  facts: Array<{ fact_type: string; label: string | null }>,
+  questions: MemoryQuestionRow[]
+) {
+  const aliases = questions
+    .filter((question) => question.question?.startsWith(DOCUMENT_ALIAS_PREFIX))
+    .map((question) => question.question?.slice(DOCUMENT_ALIAS_PREFIX.length).trim())
+    .filter((alias): alias is string => Boolean(alias));
+
+  const uniqueAliases = Array.from(new Set(aliases));
+  const memoryDisabled = questions.some(
+    (question) =>
+      question.answer === "disabled" && question.question?.startsWith(DOCUMENT_MEMORY_DISABLED_PREFIX)
+  );
+  const sourceRequestCount = questions.filter((question) =>
+    question.question?.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)
+  ).length;
+  const memoryActivity = questions.filter(isMemoryUseQuestion);
+  const lastMemoryUse = memoryActivity[0]?.created_at ?? null;
+
+  return {
+    has_credential_facts: facts.some(isCredentialFact),
+    memory_aliases: uniqueAliases,
+    memory_disabled: memoryDisabled,
+    memory_last_used_at: lastMemoryUse,
+    memory_use_count: memoryActivity.length,
+    source_request_count: sourceRequestCount
+  };
+}
+
+function groupByDocumentId<T extends { document_id: string | null }>(rows: T[]) {
+  const grouped = new Map<string, T[]>();
+
+  for (const row of rows) {
+    if (!row.document_id) continue;
+    const values = grouped.get(row.document_id) ?? [];
+    values.push(row);
+    grouped.set(row.document_id, values);
+  }
+
+  return grouped;
+}
+
+function isCredentialFact(fact: { fact_type: string; label: string | null }) {
+  const text = normalizeSearchText(`${fact.fact_type} ${fact.label ?? ""}`);
+  return /\b(credential|password|wifi|wi fi|network|ssid|contrasena|clave|red)\b/.test(text);
+}
+
+function isMemoryUseQuestion(question: MemoryQuestionRow) {
+  const text = question.question ?? "";
+  if (!question.answer || question.answer.startsWith("pending_")) return false;
+  if (text.startsWith("whatsapp:")) return false;
+  if (text.startsWith("manual_review:")) return false;
+  if (text.startsWith(DOCUMENT_ALIAS_PREFIX)) return false;
+  if (text.startsWith(DOCUMENT_MEMORY_DISABLED_PREFIX)) return false;
+  if (text.startsWith(PENDING_DOCUMENT_LABEL_PREFIX)) return false;
+  if (text.startsWith(PENDING_MEMORY_SELECTION_PREFIX)) return false;
+  if (text.startsWith(PENDING_CREDENTIAL_LABEL_PREFIX)) return false;
+  if (text.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)) return false;
+  if (text.startsWith(LAST_MEMORY_DOCUMENT_PREFIX)) return false;
+  return true;
 }
 
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {

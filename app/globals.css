@@ -546,6 +546,26 @@ svg {
   font-size: 12px;
 }
 
+.memory-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.memory-badges span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -611,6 +631,50 @@ svg {
   display: grid;
   gap: 10px;
   margin-bottom: 18px;
+}
+
+.memory-command {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfaf8;
+}
+
+.memory-command-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.memory-command-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.memory-command-head p,
+.memory-hint {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.memory-command-grid {
+  display: grid;
+  gap: 9px;
+}
+
+.memory-command .field {
+  padding-bottom: 8px;
+}
+
+.memory-command .field:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .field {

@@ -48,7 +48,7 @@ const iconPaths = {
   )
 };
 
-type Filter = "all" | "pending" | DocumentStatus;
+type Filter = "all" | "pending" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
 type ReviewAction = "approve" | "flag" | "clearer_photo" | "reset";
 
 function Icon({ children }: { children: React.ReactNode }) {
@@ -315,12 +315,18 @@ export default function Home() {
     return documents.filter((document) => {
       if (filter === "all") return true;
       if (filter === "pending") return document.review_status === "pending";
+      if (filter === "memory") return Boolean(document.memory_aliases?.length) && !document.memory_disabled;
+      if (filter === "credentials") return Boolean(document.has_credential_facts);
+      if (filter === "whatsapp") return document.source === "whatsapp";
+      if (filter === "disabled") return Boolean(document.memory_disabled);
       return document.status === filter;
     });
   }, [documents, filter]);
 
   const pendingCount = documents.filter((document) => document.review_status === "pending").length;
   const explainedCount = documents.filter((document) => document.status === "explained").length;
+  const memoryCount = documents.filter((document) => document.memory_aliases?.length).length;
+  const credentialCount = documents.filter((document) => document.has_credential_facts).length;
 
   return (
     <div className="page">
@@ -415,6 +421,14 @@ export default function Home() {
               <strong>{explainedCount}</strong>
               <span>explicados</span>
             </div>
+            <div>
+              <strong>{memoryCount}</strong>
+              <span>memorias</span>
+            </div>
+            <div>
+              <strong>{credentialCount}</strong>
+              <span>credenciales</span>
+            </div>
           </section>
 
           <div className="workspace">
@@ -430,10 +444,14 @@ export default function Home() {
                 <div className="inbox-tabs">
                   {[
                     ["all", "Todo"],
+                    ["memory", "Memoria"],
+                    ["credentials", "Credenciales"],
+                    ["whatsapp", "WhatsApp"],
                     ["pending", "Pendiente"],
                     ["received", "Recibido"],
                     ["extracted", "Extraído"],
                     ["explained", "Explicado"],
+                    ["disabled", "No buscar"],
                     ["failed", "Falló"]
                   ].map(([value, label]) => (
                     <button
@@ -468,6 +486,7 @@ export default function Home() {
                       <div>
                         <h3>{documentTitle(document)}</h3>
                         <p>{documentMeta(document)}</p>
+                        <MemoryBadges document={document} />
                       </div>
                       <span className={`status ${statusClass(document.status, document.review_status)}`}>
                         {statusLabel(document.status, document.review_status)}
@@ -538,6 +557,40 @@ export default function Home() {
                           value={reviewStatusLabel(selectedDocument.review_status)}
                         />
                       </div>
+                      <section className="memory-command">
+                        <div className="memory-command-head">
+                          <div>
+                            <h3>Memoria</h3>
+                            <p>Cómo Ayudita usa este documento cuando preguntas por WhatsApp.</p>
+                          </div>
+                          <span className={`status ${selectedDocument.memory_disabled ? "review" : "ready"}`}>
+                            {selectedDocument.memory_disabled ? "No buscar" : "Buscable"}
+                          </span>
+                        </div>
+                        <div className="memory-command-grid">
+                          <InfoField
+                            label="Etiquetas"
+                            value={
+                              selectedDocument.memory_aliases?.length
+                                ? selectedDocument.memory_aliases.join(", ")
+                                : "Sin etiqueta"
+                            }
+                          />
+                          <InfoField
+                            label="Tipo memoria"
+                            value={selectedDocument.has_credential_facts ? "Credencial" : "Documento"}
+                          />
+                          <InfoField
+                            label="Usos"
+                            value={String(selectedDocument.memory_use_count ?? 0)}
+                          />
+                          <InfoField
+                            label="Fuente enviada"
+                            value={String(selectedDocument.source_request_count ?? 0)}
+                          />
+                        </div>
+                        <p className="memory-hint">{memoryHint(selectedDocument)}</p>
+                      </section>
                       <div className="detail-actions">
                         <button
                           className="primary"
@@ -684,6 +737,43 @@ function InfoField({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function MemoryBadges({ document }: { document: DecoderDocumentSummary }) {
+  const badges: string[] = [];
+
+  if (document.memory_aliases?.length) badges.push(...document.memory_aliases.slice(0, 2));
+  if (document.has_credential_facts) badges.push("credencial");
+  if (document.memory_disabled) badges.push("no buscar");
+  if (!badges.length) return null;
+
+  return (
+    <div className="memory-badges" aria-label="Memoria del documento">
+      {badges.map((badge) => (
+        <span key={badge}>{badge}</span>
+      ))}
+    </div>
+  );
+}
+
+function memoryHint(document: DecoderDocumentDetail) {
+  if (document.memory_disabled) {
+    return "Este documento está guardado, pero Ayudita no lo usará en búsquedas de memoria.";
+  }
+
+  if (document.memory_aliases?.length && document.has_credential_facts) {
+    return `Ayudita puede contestar preguntas de credenciales usando: ${document.memory_aliases.join(", ")}.`;
+  }
+
+  if (document.memory_aliases?.length) {
+    return `Ayudita puede encontrar este documento por: ${document.memory_aliases.join(", ")}.`;
+  }
+
+  if (document.has_credential_facts) {
+    return "Este documento tiene credenciales detectadas, pero todavía no tiene una etiqueta de memoria.";
+  }
+
+  return "Este documento puede responder preguntas si coincide por tipo, fecha, texto extraído o contexto.";
 }
 
 function documentTitle(
