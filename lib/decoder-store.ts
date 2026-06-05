@@ -315,6 +315,7 @@ export async function answerDecoderDocumentQuestion(input: {
 
   const { body, model } = await answerFollowUpWithOpenAI({
     question: input.question,
+    targetLanguage: detectQuestionLanguage(input.question),
     facts: document.facts,
     explanations: document.explanations
   });
@@ -600,6 +601,18 @@ function categoryLabel(category: string) {
 function normalizeUserPhone(userPhone?: string) {
   const trimmed = userPhone?.trim();
   return trimmed || DEFAULT_WEB_USER_PHONE;
+}
+
+function detectQuestionLanguage(question: string): "en" | "es" {
+  if (/[¿¡áéíóúñ]/i.test(question)) return "es";
+
+  const normalized = question.toLowerCase();
+  const englishSignals = /\b(what|when|where|why|how|need|do|pay|amount|who|is|this)\b/i;
+  const spanishSignals =
+    /\b(que|qué|cuando|cuándo|donde|dónde|porque|por qué|como|cómo|necesito|pagar|monto|quien|quién|es|esto)\b/i;
+
+  if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
+  return "es";
 }
 
 function sanitizeFileName(fileName: string) {

@@ -99,10 +99,14 @@ export async function explainFactsWithOpenAI(input: {
 
 export async function answerFollowUpWithOpenAI(input: {
   question: string;
+  targetLanguage: "en" | "es";
   facts: DecoderFact[];
   explanations: DecoderExplanation[];
 }): Promise<{ body: string; model: string }> {
   const client = createOpenAIClient();
+  const matchingExplanations = input.explanations.filter(
+    (explanation) => explanation.language === input.targetLanguage
+  );
 
   const response = await client.responses.create({
     model: EXPLAIN_MODEL,
@@ -115,6 +119,7 @@ export async function answerFollowUpWithOpenAI(input: {
             type: "input_text",
             text: JSON.stringify({
               question: input.question,
+              target_language: input.targetLanguage,
               facts: input.facts.map((fact) => ({
                 fact_type: fact.fact_type,
                 label: fact.label,
@@ -123,7 +128,7 @@ export async function answerFollowUpWithOpenAI(input: {
                 source_text: fact.source_text,
                 page_number: fact.page_number
               })),
-              explanations: input.explanations.map((explanation) => ({
+              explanations: matchingExplanations.map((explanation) => ({
                 language: explanation.language,
                 body: explanation.body
               }))
