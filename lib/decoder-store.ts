@@ -451,6 +451,20 @@ export async function answerDecoderDocumentQuestion(input: {
   };
 }
 
+export async function recordMemoryAnswer(input: {
+  documentId: string;
+  userPhone: string;
+  question: string;
+  answer: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: input.question,
+    answer: input.answer
+  });
+}
+
 export async function rememberPendingSensitiveQuestion(input: {
   documentId: string;
   userPhone: string;

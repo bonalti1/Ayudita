@@ -19,6 +19,7 @@ import {
   hasProcessedWhatsAppMessage,
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
+  recordMemoryAnswer,
   rememberPendingMemorySearch,
   rememberDocumentAlias,
   rememberLastMemoryDocument,
@@ -35,6 +36,7 @@ import {
   reviewDecoderDocument
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
+import { querySavedMemory } from "@/lib/memory-query";
 import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-auth";
 import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 import {
@@ -758,6 +760,9 @@ async function answerMemoryQuestion(input: {
   notFoundMessage: string;
   aliasToRemember?: string;
 }) {
+  const directAnswer = await answerMemoryQuestionDirectlyIfConfident(input);
+  if (directAnswer) return directAnswer;
+
   const documents = await findWhatsAppMemoryDocuments({
     userPhone: input.from,
     query: input.question
@@ -806,6 +811,83 @@ async function answerMemoryQuestion(input: {
     document,
     aliasToRemember: input.aliasToRemember
   });
+}
+
+async function answerMemoryQuestionDirectlyIfConfident(input: {
+  from: string;
+  question: string;
+  messageId?: string;
+  aliasToRemember?: string;
+}) {
+  const result = await querySavedMemory({
+    userPhone: input.from,
+    question: input.question,
+    isUnlocked: true
+  });
+
+  if (!result.answer || !result.document?.id) return null;
+  if (result.confidence === "low" || result.confidence === "none") return null;
+
+  const shouldSkipSelection =
+    result.confidence === "high" ||
+    Boolean(result.duplicate_source_count && result.duplicate_source_count > 1);
+
+  if (!shouldSkipSelection) return null;
+
+  const document = await getDecoderDocument(result.document.id);
+  if (!document) return null;
+
+  if (hasSensitiveFacts(document.facts) && document.review_status !== "reviewed") {
+    await rememberPendingSensitiveQuestion({
+      documentId: document.id,
+      userPhone: input.from,
+      question: input.question
+    });
+    await sendTextIfConfigured(input.from, sensitivePasswordRequestMessage(languageForText(input.question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: document.id,
+      action: "memory_sensitive_password_requested"
+    };
+  }
+
+  if (input.aliasToRemember) {
+    await rememberDocumentAlias({
+      documentId: document.id,
+      userPhone: input.from,
+      alias: input.aliasToRemember
+    });
+  }
+
+  await recordMemoryAnswer({
+    documentId: document.id,
+    userPhone: input.from,
+    question: input.question,
+    answer: result.answer
+  });
+  await rememberLastMemoryDocument({
+    documentId: document.id,
+    userPhone: input.from
+  });
+
+  await sendTextIfConfigured(
+    input.from,
+    whatsappMemoryAnswerMessage(result.answer, result.duplicate_source_count ?? 1, languageForText(input.question))
+  );
+  await offerSourceDocumentIfUseful({
+    to: input.from,
+    documentId: document.id,
+    language: languageForText(input.question)
+  });
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: document.id,
+    action: "memory_direct_answered"
+  };
 }
 
 async function sendMemoryPreviewImagesIfUseful(input: {
@@ -1230,6 +1312,16 @@ function credentialLabelConfirmedMessage(label: string, language: "en" | "es") {
 function credentialLabelDeclinedMessage(language: "en" | "es") {
   if (language === "en") return "Okay. I will not save that WiFi label.";
   return "Esta bien. No voy a guardar esa etiqueta de WiFi.";
+}
+
+function whatsappMemoryAnswerMessage(answer: string, duplicateSourceCount: number, language: "en" | "es") {
+  if (duplicateSourceCount <= 1) return answer;
+
+  if (language === "en") {
+    return `${answer}\n\nI found ${duplicateSourceCount} saved sources that say the same thing, so I answered directly.`;
+  }
+
+  return `${answer}\n\nEncontre ${duplicateSourceCount} fuentes guardadas que dicen lo mismo, por eso conteste directo.`;
 }
 
 function sourceDocumentPrompt(document: DecoderDocumentDetail, language: "en" | "es") {
