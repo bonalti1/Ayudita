@@ -18,6 +18,7 @@ import { sendWhatsAppText } from "./whatsapp";
 const RAW_DOCUMENTS_BUCKET = "raw-documents";
 const DEFAULT_WEB_USER_PHONE = "web-demo";
 const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
+const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -295,6 +296,23 @@ export async function answerLatestWhatsAppDocumentQuestion(input: {
     return null;
   }
 
+  return answerDecoderDocumentQuestion({
+    documentId: document.id,
+    userPhone: input.userPhone,
+    question: input.question
+  });
+}
+
+export async function answerDecoderDocumentQuestion(input: {
+  documentId: string;
+  userPhone: string;
+  question: string;
+}) {
+  const document = await getDecoderDocument(input.documentId);
+  if (!document || !document.facts.length) {
+    return null;
+  }
+
   const { body, model } = await answerFollowUpWithOpenAI({
     question: input.question,
     facts: document.facts,
@@ -313,6 +331,35 @@ export async function answerLatestWhatsAppDocumentQuestion(input: {
     body,
     model
   };
+}
+
+export async function rememberPendingSensitiveQuestion(input: {
+  documentId: string;
+  userPhone: string;
+  question: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${PENDING_SENSITIVE_QUESTION_PREFIX}${input.question}`,
+    answer: "pending_password"
+  });
+}
+
+export async function getLatestPendingSensitiveQuestion(documentId: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("question")
+    .eq("document_id", documentId)
+    .like("question", `${PENDING_SENSITIVE_QUESTION_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.question?.slice(PENDING_SENSITIVE_QUESTION_PREFIX.length) ?? null;
 }
 
 export async function hasProcessedWhatsAppMessage(messageId: string) {

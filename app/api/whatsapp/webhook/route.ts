@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import {
   createRawDecoderDocument,
+  answerDecoderDocumentQuestion,
   answerLatestWhatsAppDocumentQuestion,
   explainDecoderDocument,
   extractDecoderDocument,
   getDecoderDocument,
+  getLatestPendingSensitiveQuestion,
   hasProcessedWhatsAppMessage,
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
+  rememberPendingSensitiveQuestion,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
@@ -283,11 +286,18 @@ async function processTextUnlockMessage(input: {
   const pendingDocument = await latestSensitivePendingDocument(input.from);
   if (!pendingDocument) return null;
 
-  if (!isReviewerPasswordValid(input.text.trim())) {
-    await sendTextIfConfigured(
-      input.from,
-      "Este documento tiene informacion sensible. Responde con la contraseña correcta de revision para revelarla."
-    );
+  const text = input.text.trim();
+
+  if (!isReviewerPasswordValid(text)) {
+    if (looksLikeFollowUpQuestion(text)) {
+      await rememberPendingSensitiveQuestion({
+        documentId: pendingDocument.id,
+        userPhone: input.from,
+        question: text
+      });
+    }
+
+    await sendTextIfConfigured(input.from, sensitivePasswordRequestMessage(languageForText(text)));
 
     return {
       ok: true,
@@ -302,6 +312,27 @@ async function processTextUnlockMessage(input: {
     : await explainDecoderDocument(pendingDocument.id);
 
   await reviewDecoderDocument(pendingDocument.id, "approve");
+
+  const pendingQuestion = await getLatestPendingSensitiveQuestion(pendingDocument.id);
+  if (pendingQuestion) {
+    const answer = await answerDecoderDocumentQuestion({
+      documentId: pendingDocument.id,
+      userPhone: input.from,
+      question: pendingQuestion
+    });
+
+    if (answer) {
+      await sendTextIfConfigured(input.from, answer.body);
+
+      return {
+        ok: true,
+        messageId: input.messageId ?? null,
+        documentId: pendingDocument.id,
+        action: "sensitive_pending_question_unlocked_and_answered"
+      };
+    }
+  }
+
   await sendTextIfConfigured(
     input.from,
     explainedDocument.explanations[0]?.body ?? "No pude generar la explicacion."
@@ -356,6 +387,33 @@ async function latestSensitivePendingDocument(userPhone: string) {
   }
 
   return null;
+}
+
+function looksLikeFollowUpQuestion(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 12) return true;
+  return /[?¿]/.test(trimmed);
+}
+
+function languageForText(text: string): "en" | "es" {
+  const normalized = text.toLowerCase();
+  if (/[¿¡áéíóúñ]/i.test(text)) return "es";
+
+  const englishSignals = /\b(what|when|where|why|how|need|do|pay|amount|who|is|this)\b/i;
+  const spanishSignals =
+    /\b(que|qué|cuando|cuándo|donde|dónde|porque|por qué|como|cómo|necesito|pagar|monto|quien|quién|es|esto)\b/i;
+
+  if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
+  return "es";
+}
+
+function sensitivePasswordRequestMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "This document has sensitive information. Reply with the review password so I can answer that here in WhatsApp.";
+  }
+
+  return "Este documento tiene informacion sensible. Responde con la contraseña correcta de revision para revelarla.";
 }
 
 async function sendTextIfConfigured(to: string, body: string) {
