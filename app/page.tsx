@@ -463,6 +463,15 @@ export default function Home() {
                         {selectedDocument.explanations[0]?.body ??
                           "El documento ya está guardado. Falta correr extracción y explicación."}
                       </p>
+                      {hasSensitiveFacts(selectedDocument) ? (
+                        <div className="sensitive-note">
+                          <strong>Información sensible detectada</strong>
+                          <span>
+                            Revisa passwords, cuentas, direcciones o códigos visibles antes de aprobar
+                            y enviar por WhatsApp.
+                          </span>
+                        </div>
+                      ) : null}
                       <div className="fields">
                         <InfoField label="Source" value={selectedDocument.source} />
                         <InfoField label="Storage" value={selectedDocument.storage_path} />
@@ -694,6 +703,21 @@ function canSendWhatsApp(document: DecoderDocumentDetail) {
     document.review_status === "reviewed" &&
     document.explanations.length > 0
   );
+}
+
+function hasSensitiveFacts(document: DecoderDocumentDetail) {
+  return document.facts.some((fact) => {
+    const text = `${fact.fact_type} ${fact.label ?? ""}`.toLowerCase();
+    return (
+      text.includes("credential") ||
+      text.includes("password") ||
+      text.includes("account") ||
+      text.includes("address") ||
+      text.includes("code") ||
+      text.includes("token") ||
+      text.includes("key")
+    );
+  });
 }
 
 function statusClass(status: DocumentStatus, reviewStatus: ReviewStatus) {

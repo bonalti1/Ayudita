@@ -648,6 +648,27 @@ svg {
   font-size: 13px;
 }
 
+.sensitive-note {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #f3c7bd;
+  border-radius: var(--radius);
+  background: #fff6f3;
+  color: #7f2f22;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sensitive-note strong {
+  font-size: 13px;
+}
+
+.sensitive-note span {
+  color: #8d4638;
+}
+
 .review-actions {
   margin-top: 18px;
   padding-top: 16px;
