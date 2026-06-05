@@ -54,6 +54,11 @@ export async function POST(request: Request) {
   }
 
   const messages = getMessages(payload);
+  console.log("WhatsApp webhook received.", {
+    messages: messages.length,
+    entries: payload.entry?.length ?? 0
+  });
+
   const results = [];
 
   for (const message of messages) {
@@ -87,6 +92,12 @@ async function processMessage(message: WhatsAppMessage) {
     throw new Error("WhatsApp message is missing sender.");
   }
 
+  console.log("Processing WhatsApp message.", {
+    messageId: message.id ?? null,
+    from,
+    type: message.type ?? "unknown"
+  });
+
   if (message.type === "image") {
     return ingestMediaMessage({
       from,
@@ -111,6 +122,11 @@ async function processMessage(message: WhatsAppMessage) {
     from,
     "Mandame una foto o PDF de la carta que recibiste y te ayudo a entender que dice."
   );
+
+  console.log("Prompted WhatsApp sender for a document.", {
+    messageId: message.id ?? null,
+    from
+  });
 
   return {
     ok: true,
@@ -146,6 +162,13 @@ async function ingestMediaMessage(input: {
     "Recibi tu documento. Primero lo guarde de forma segura y lo pondre en revision."
   );
 
+  console.log("Stored WhatsApp media document.", {
+    messageId: input.messageId ?? null,
+    from: input.from,
+    documentId: document.id,
+    mimeType
+  });
+
   return {
     ok: true,
     messageId: input.messageId ?? null,
@@ -156,6 +179,9 @@ async function ingestMediaMessage(input: {
 }
 
 async function sendTextIfConfigured(to: string, body: string) {
-  if (!env.whatsappAccessToken || !env.whatsappPhoneNumberId) return;
+  if (!env.whatsappAccessToken || !env.whatsappPhoneNumberId) {
+    console.log("WhatsApp reply skipped because credentials are missing.");
+    return;
+  }
   await sendWhatsAppText(to, body);
 }
