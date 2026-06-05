@@ -365,10 +365,11 @@ export async function findWhatsAppMemoryDocuments(input: {
     .sort((a, b) => b.score - a.score);
 
   const threshold = memoryMatchThreshold(input.query);
-  return ranked
+  const matches = ranked
     .filter((match) => match.score >= threshold)
-    .slice(0, input.limit ?? 3)
     .map((match) => match.document);
+
+  return dedupeMemoryDocuments(input.query, matches).slice(0, input.limit ?? 3);
 }
 
 export async function answerDecoderDocumentQuestion(input: {
@@ -939,6 +940,71 @@ function scoreMemoryDocument(
 function mentionsAny(text: string, words: string[]) {
   return words.some((word) => new RegExp(`\\b${word}\\b`).test(text));
 }
+
+function dedupeMemoryDocuments(query: string, documents: DecoderDocumentDetail[]) {
+  if (!isCredentialMemoryQuery(query)) return documents;
+
+  const seen = new Set<string>();
+  const unique: DecoderDocumentDetail[] = [];
+
+  for (const document of documents) {
+    const key = credentialDuplicateKey(document);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    unique.push(document);
+  }
+
+  return unique;
+}
+
+function credentialDuplicateKey(document: DecoderDocumentDetail) {
+  const facts = document.facts.map((fact) =>
+    normalizeSearchText([fact.fact_type, fact.label, fact.fact_value, fact.source_text].filter(Boolean).join(" "))
+  );
+  const corpus = facts.join(" ");
+  if (!isCredentialCorpus(corpus)) return null;
+
+  const network = firstMeaningfulMatch(corpus, [
+    /\b(?:network|ssid|red)\s+(?:name\s+)?([a-z0-9][a-z0-9_-]{2,})\b/,
+    /\b(spectrumsetup[-\s]?[a-z0-9]+)\b/,
+    /\b([a-z0-9][a-z0-9_-]*(?:wifi|wi fi|network)[a-z0-9_-]*)\b/
+  ]);
+  const password = firstMeaningfulMatch(corpus, [
+    /\b(?:password|contrasena|clave)\s+([a-z0-9][a-z0-9_-]{5,})\b/
+  ]);
+
+  if (network && password) return `wifi:${network}:password:${password}`;
+  if (password) return `wifi:password:${password}`;
+  if (network) return `wifi:network:${network}`;
+  return null;
+}
+
+function firstMeaningfulMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = match?.[1]?.trim();
+    if (value && !credentialStopValues.has(value)) return value;
+  }
+  return null;
+}
+
+function isCredentialMemoryQuery(query: string) {
+  return isCredentialCorpus(normalizeSearchText(query));
+}
+
+function isCredentialCorpus(text: string) {
+  return /\b(wifi|network|ssid|password|contrasena|clave|red)\b/.test(text);
+}
+
+const credentialStopValues = new Set([
+  "settings",
+  "screenshot",
+  "password",
+  "network",
+  "wifi",
+  "automatic",
+  "fixed"
+]);
 
 async function getDocumentAliasesById(documentIds: string[]) {
   const aliasesByDocumentId = new Map<string, string[]>();
