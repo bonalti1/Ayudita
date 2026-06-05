@@ -1361,16 +1361,16 @@ function whatsappMemoryAnswerMessage(answer: string, duplicateSourceCount: numbe
   if (duplicateSourceCount <= 1) return answer;
 
   if (language === "en") {
-    return `${answer}\n\nI found ${duplicateSourceCount} saved sources that say the same thing, so I answered directly.`;
+    return `${answer}\n\nI found ${duplicateSourceCount} proof sources that say the same thing, so I answered directly.`;
   }
 
-  return `${answer}\n\nEncontre ${duplicateSourceCount} fuentes guardadas que dicen lo mismo, por eso conteste directo.`;
+  return `${answer}\n\nEncontre ${duplicateSourceCount} pruebas que dicen lo mismo, por eso conteste directo.`;
 }
 
 function sourceDocumentPrompt(document: DecoderDocumentDetail, language: "en" | "es") {
   const sourceName = sourceDocumentKind(document, language);
   if (language === "en") {
-    return `Do you want me to send the original ${sourceName} I used?`;
+    return `Do you want me to send the actual original ${sourceName} I used?`;
   }
 
   return `Quieres que te mande ${sourceName} original que use?`;

@@ -36,11 +36,12 @@ type GroupDraft = {
   documents: DecoderDocumentDetail[];
 };
 
-export async function listTrustedAnswers(input: { isUnlocked?: boolean } = {}) {
+export async function listTrustedAnswers(input: { isUnlocked?: boolean; userPhone?: string } = {}) {
   const summaries = await listDecoderDocuments();
   const candidates = summaries
     .filter(
       (document) =>
+        (!input.userPhone || document.user_phone === input.userPhone) &&
         !document.memory_disabled &&
         (document.status === "extracted" || document.status === "explained") &&
         (document.memory_aliases?.length || document.has_credential_facts || document.facts_count > 0)

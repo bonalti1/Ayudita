@@ -1,6 +1,7 @@
 import { getDecoderDocument, listDecoderDocuments } from "./decoder-store";
 import { sanitizeDocumentDetail } from "./sensitive-documents";
 import type { DecoderDocumentDetail, DecoderFact } from "./decoder-types";
+import { listTrustedAnswers, type TrustedAnswerGroup } from "./trusted-answers";
 
 type MemoryCandidate = {
   document: DecoderDocumentDetail;
@@ -8,9 +9,15 @@ type MemoryCandidate = {
   answerFact: DecoderFact | null;
 };
 
+type TrustedAnswerCandidate = {
+  answer: TrustedAnswerGroup;
+  score: number;
+};
+
 export type MemoryQueryResult = {
   answer: string | null;
   confidence: "high" | "medium" | "low" | "none";
+  answer_source?: "trusted_answer" | "document";
   duplicate_source_count?: number;
   message?: string;
   document?: {
@@ -37,6 +44,13 @@ export async function querySavedMemory(input: {
   isUnlocked?: boolean;
 }): Promise<MemoryQueryResult> {
   const question = input.question.trim();
+  const trustedResult = await queryTrustedAnswerMemory({
+    question,
+    userPhone: input.userPhone,
+    isUnlocked: input.isUnlocked
+  });
+  if (trustedResult) return trustedResult;
+
   const summaries = await listDecoderDocuments();
   const memorySummaries = summaries
     .filter(
@@ -73,6 +87,7 @@ export async function querySavedMemory(input: {
   return {
     answer: buildAnswer(question, sanitizedDocument, answerFact),
     confidence: best.score >= 12 ? "high" : best.score >= 7 ? "medium" : "low",
+    answer_source: "document",
     duplicate_source_count: duplicateCount,
     document: {
       id: sanitizedDocument.id,
@@ -93,6 +108,113 @@ export async function querySavedMemory(input: {
         }
       : null
   };
+}
+
+async function queryTrustedAnswerMemory(input: {
+  question: string;
+  userPhone?: string;
+  isUnlocked?: boolean;
+}): Promise<MemoryQueryResult | null> {
+  const trustedAnswers = await listTrustedAnswers({
+    userPhone: input.userPhone,
+    isUnlocked: input.isUnlocked
+  });
+
+  const candidates = trustedAnswers
+    .map((answer) => rankTrustedAnswerCandidate(input.question, answer))
+    .filter((candidate) => candidate.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const best = candidates[0];
+  if (!best) return null;
+
+  const confidence =
+    best.answer.confidence === "high" && best.score >= 8
+      ? "high"
+      : best.score >= 10
+        ? "high"
+        : best.score >= 6
+          ? "medium"
+          : "low";
+
+  if (confidence === "low") return null;
+
+  return {
+    answer: buildTrustedAnswer(input.question, best.answer),
+    confidence,
+    answer_source: "trusted_answer",
+    duplicate_source_count: best.answer.source_count,
+    document: {
+      id: best.answer.main_document_id,
+      title: best.answer.main_source_title,
+      source: best.answer.sources[0]?.source ?? "saved",
+      mime_type: best.answer.sources[0]?.mime_type ?? null,
+      created_at: best.answer.sources[0]?.created_at ?? new Date(0).toISOString(),
+      memory_aliases: best.answer.aliases
+    },
+    fact: {
+      label: best.answer.answer_label,
+      fact_type: "trusted_answer",
+      fact_value: best.answer.answer_value,
+      source_text: best.answer.answer_source_text
+    }
+  };
+}
+
+function rankTrustedAnswerCandidate(question: string, answer: TrustedAnswerGroup): TrustedAnswerCandidate {
+  const questionTokens = tokenize(question);
+  const haystack = [
+    answer.title,
+    answer.answer_label,
+    answer.answer_value,
+    answer.main_source_title,
+    answer.answer_source_text,
+    ...answer.aliases,
+    ...answer.sources.map((source) => source.title)
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  let score = 0;
+  for (const token of questionTokens) {
+    if (haystack.includes(token)) score += token.length > 4 ? 2 : 1;
+  }
+
+  const normalizedQuestion = question.toLowerCase();
+  const normalizedTitle = answer.title.toLowerCase();
+  if (normalizedQuestion.includes(normalizedTitle)) score += 8;
+  if (answer.aliases.some((alias) => normalizedQuestion.includes(alias.toLowerCase()))) score += 8;
+
+  const isCredentialQuestion = looksLikeCredentialQuestion(question);
+  const isCredentialAnswer = includesAny(`${answer.title} ${answer.answer_label}`, [
+    "password",
+    "credential",
+    "wifi",
+    "wi-fi",
+    "network"
+  ]);
+  if (isCredentialQuestion && isCredentialAnswer) score += 12;
+  if (isCredentialQuestion && !isCredentialAnswer) score -= 8;
+
+  if (answer.answer_value) score += 3;
+  if (answer.source_count > 1) score += 3;
+  if (answer.confidence === "high") score += 2;
+
+  return { answer, score };
+}
+
+function buildTrustedAnswer(question: string, answer: TrustedAnswerGroup) {
+  const value = answer.answer_value;
+  if (!value) {
+    return `I found ${answer.title}, but I need the proof source to confirm the exact answer.`;
+  }
+
+  if (looksLikeCredentialQuestion(question) || answer.answer_label.toLowerCase().includes("password")) {
+    return `Your ${answer.title} ${answer.answer_label.toLowerCase()} is "${value}". Source: ${answer.main_source_title}.`;
+  }
+
+  return `${answer.answer_label}: ${value}. Source: ${answer.main_source_title}.`;
 }
 
 function rankMemoryCandidate(question: string, document: DecoderDocumentDetail): MemoryCandidate {
