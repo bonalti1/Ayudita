@@ -601,19 +601,6 @@ async function processTextMemoryMessage(input: {
   if (!question || !looksLikeMemoryQuestion(question)) return null;
 
   if (needsMemoryClarification(question)) {
-    const lastMemoryDocumentId = await getLatestMemoryDocumentReference(input.from);
-    if (lastMemoryDocumentId) {
-      const lastMemoryDocument = await getDecoderDocument(lastMemoryDocumentId);
-      if (lastMemoryDocument) {
-        return answerSelectedMemoryDocument({
-          from: input.from,
-          question,
-          messageId: input.messageId,
-          document: lastMemoryDocument
-        });
-      }
-    }
-
     await rememberPendingMemorySearch({
       userPhone: input.from,
       query: question
@@ -662,7 +649,7 @@ async function answerMemoryQuestion(input: {
     };
   }
 
-  if (documents.length > 1 && !shouldAutoAnswerBestMemoryMatch(input.question)) {
+  if (documents.length > 1) {
     await rememberPendingMemorySelection({
       userPhone: input.from,
       question: input.question,
@@ -819,6 +806,7 @@ function looksLikeMemoryQuestion(text: string) {
     .replace(/[\u0300-\u036f]/g, "");
 
   if (looksLikeFeedbackMessage(normalized)) return false;
+  if (isCredentialMemoryQuestion(text)) return true;
 
   return /\b(find|search|show|remember|last|latest|previous|yesterday|earlier|papers|wifi|password|network|ssid|credential|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer|contrasena|contraseña|red|clave|credencial)\b/.test(
     normalized
@@ -845,14 +833,6 @@ function needsMemoryClarification(text: string) {
     ) || /\b[A-Z0-9][A-Z0-9_-]{3,}\b/.test(text);
 
   return !hasSpecificContext;
-}
-
-function shouldAutoAnswerBestMemoryMatch(text: string) {
-  const normalized = normalizeMemoryText(text);
-
-  return /\b(wifi|wi fi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(
-    normalized
-  );
 }
 
 function isCredentialMemoryQuestion(text: string) {
