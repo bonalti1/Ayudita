@@ -539,9 +539,11 @@ function looksLikeMemoryQuestion(text: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+  if (looksLikeFeedbackMessage(normalized)) return false;
+
   return /\b(find|search|show|remember|last|latest|previous|yesterday|earlier|papers|wifi|password|network|ssid|credential|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer|contrasena|contraseña|red|clave|credencial)\b/.test(
     normalized
-  );
+  ) && looksLikeSearchIntent(normalized);
 }
 
 function looksLikeNewDocumentQuestion(text: string) {
@@ -564,6 +566,22 @@ function needsMemoryClarification(text: string) {
     ) || /\b[A-Z0-9][A-Z0-9_-]{3,}\b/.test(text);
 
   return !hasSpecificContext;
+}
+
+function looksLikeSearchIntent(normalizedText: string) {
+  return (
+    /[?¿]/.test(normalizedText) ||
+    /\b(find|search|show|remember|last|latest|previous|yesterday|earlier|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer)\b/.test(
+      normalizedText
+    ) ||
+    normalizedText.split(/\s+/).length <= 4
+  );
+}
+
+function looksLikeFeedbackMessage(normalizedText: string) {
+  return /\b(thank|thanks|gracias|good|perfect|perfecto|ok|okay|always ask|siempre pregunta)\b/.test(
+    normalizedText
+  );
 }
 
 function languageForText(text: string): "en" | "es" {
