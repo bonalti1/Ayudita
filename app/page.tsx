@@ -51,6 +51,7 @@ const iconPaths = {
 type Filter = "all" | "pending" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
 type ReviewAction = "approve" | "flag" | "clearer_photo" | "reset";
 type UiLanguage = "en" | "es";
+type ActiveView = "command" | "review" | "memory" | "documents";
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -65,6 +66,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<DecoderDocumentDetail | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [activeView, setActiveView] = useState<ActiveView>("command");
   const [uploadStatus, setUploadStatus] = useState("");
   const [extractStatus, setExtractStatus] = useState("");
   const [explainStatus, setExplainStatus] = useState("");
@@ -315,8 +317,34 @@ export default function Home() {
     }
   }
 
+  const reviewDocuments = useMemo(() => {
+    return documents.filter(
+      (document) =>
+        document.review_status === "pending" ||
+        document.review_status === "flagged" ||
+        document.status === "failed"
+    );
+  }, [documents]);
+
+  const memoryDocuments = useMemo(() => {
+    return documents.filter(
+      (document) =>
+        Boolean(document.memory_aliases?.length) ||
+        Boolean(document.has_credential_facts) ||
+        Boolean(document.memory_disabled)
+    );
+  }, [documents]);
+
+  const recentDocuments = documents.slice(0, 5);
+  const needsAttentionDocuments = reviewDocuments.slice(0, 4);
+
   const visibleDocuments = useMemo(() => {
-    return documents.filter((document) => {
+    const viewDocuments =
+      activeView === "review" ? reviewDocuments : activeView === "memory" ? memoryDocuments : documents;
+
+    if (activeView !== "documents") return viewDocuments;
+
+    return viewDocuments.filter((document) => {
       if (filter === "all") return true;
       if (filter === "pending") return document.review_status === "pending";
       if (filter === "memory") return Boolean(document.memory_aliases?.length) && !document.memory_disabled;
@@ -325,12 +353,66 @@ export default function Home() {
       if (filter === "disabled") return Boolean(document.memory_disabled);
       return document.status === filter;
     });
-  }, [documents, filter]);
+  }, [activeView, documents, filter, memoryDocuments, reviewDocuments]);
 
   const pendingCount = documents.filter((document) => document.review_status === "pending").length;
   const explainedCount = documents.filter((document) => document.status === "explained").length;
   const memoryCount = documents.filter((document) => document.memory_aliases?.length).length;
   const credentialCount = documents.filter((document) => document.has_credential_facts).length;
+  const flaggedCount = documents.filter((document) => document.review_status === "flagged").length;
+
+  const viewTitle =
+    activeView === "command"
+      ? ui("Command Center", "Centro de mando")
+      : activeView === "review"
+        ? ui("Review Queue", "Cola de revisión")
+        : activeView === "memory"
+          ? ui("Memory Dashboard", "Dashboard de memoria")
+          : ui("Document Library", "Biblioteca de documentos");
+
+  const viewDescription =
+    activeView === "command"
+      ? ui(
+          "Start here: what needs attention, what Ayudita knows, and what can be trusted.",
+          "Empieza aquí: qué necesita atención, qué sabe Ayudita y qué se puede confiar."
+        )
+      : activeView === "review"
+        ? ui(
+            "Approve, flag, or ask for clearer source material before answers go out.",
+            "Aprueba, marca o pide una fuente más clara antes de enviar respuestas."
+          )
+        : activeView === "memory"
+          ? ui(
+              "See what Ayudita can remember, where it came from, and whether it is searchable.",
+              "Ve qué puede recordar Ayudita, de dónde vino y si se puede buscar."
+            )
+          : ui(
+              "Browse the raw archive by source, type, status, and memory labels.",
+              "Busca en el archivo original por fuente, tipo, estado y etiquetas de memoria."
+            );
+
+  const listTitle =
+    activeView === "review"
+      ? ui("Needs Review", "Necesita revisión")
+      : activeView === "memory"
+        ? ui("Known Memory", "Memoria conocida")
+        : ui("Received Documents", "Documentos recibidos");
+
+  const listDescription =
+    activeView === "review"
+      ? ui(
+          "These are the items where trust needs a human decision.",
+          "Estos son los elementos donde la confianza necesita una decisión humana."
+        )
+      : activeView === "memory"
+        ? ui(
+            "Credential facts, labels, disabled memories, and frequently used source material live here.",
+            "Credenciales, etiquetas, memorias desactivadas y fuentes usadas viven aquí."
+          )
+        : ui(
+            "Everything lands here after being saved as a raw document.",
+            "Todo entra aquí después de guardarse como raw document."
+          );
 
   return (
     <div className="page">
@@ -339,17 +421,21 @@ export default function Home() {
           <img src="/ayudita-red.png" alt="Ayudita" />
         </div>
         <nav className="nav" aria-label="Ayudita">
-          <button className="active">
+          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}>
             <Icon>{iconPaths.home}</Icon>
-            Dashboard
+            {ui("Command Center", "Centro de mando")}
           </button>
-          <button>
-            <Icon>{iconPaths.inbox}</Icon>
-            {ui("Documents", "Documentos")}
-          </button>
-          <button>
+          <button className={activeView === "review" ? "active" : ""} onClick={() => setActiveView("review")}>
             <Icon>{iconPaths.shield}</Icon>
             {ui("Review", "Revisión")}
+          </button>
+          <button className={activeView === "memory" ? "active" : ""} onClick={() => setActiveView("memory")}>
+            <Icon>{iconPaths.doc}</Icon>
+            {ui("Memory", "Memoria")}
+          </button>
+          <button className={activeView === "documents" ? "active" : ""} onClick={() => setActiveView("documents")}>
+            <Icon>{iconPaths.inbox}</Icon>
+            {ui("Documents", "Documentos")}
           </button>
         </nav>
         <div className="side-status">
@@ -391,14 +477,9 @@ export default function Home() {
         <main className="main">
           <section className="intro">
             <div>
-              <p className="eyebrow">Decoder v1</p>
-              <h1>{ui("Explain documents with evidence, without guessing.", "Explica documentos con evidencia, sin inventar.")}</h1>
-              <p>
-                {ui(
-                  "Upload a photo, PDF, or screenshot. Ayudita saves the original first, detects the document type, and extracts facts before explaining.",
-                  "Sube una foto, PDF o screenshot. Ayudita guarda el original primero, detecta el tipo de documento y extrae facts antes de explicar."
-                )}
-              </p>
+              <p className="eyebrow">Ayudita v1</p>
+              <h1>{viewTitle}</h1>
+              <p>{viewDescription}</p>
             </div>
             <div className="trust-note">
               <strong>{ui("Main rule", "Regla principal")}</strong>
@@ -455,45 +536,211 @@ export default function Home() {
             </div>
           </section>
 
+          {activeView === "command" ? (
+            <section className="command-layout" aria-label={ui("Command Center", "Centro de mando")}>
+              <div className="command-main">
+                <section className="panel command-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>{ui("What Needs Attention", "Qué necesita atención")}</h2>
+                      <p>
+                        {ui(
+                          "The queue Ayudita should not fully automate yet.",
+                          "La cola que Ayudita todavía no debe automatizar por completo."
+                        )}
+                      </p>
+                    </div>
+                    <span className="status review">{ui(`${reviewDocuments.length} items`, `${reviewDocuments.length} elementos`)}</span>
+                  </div>
+                  <div className="priority-list">
+                    {isLoading ? <div className="empty-state">{ui("Loading documents...", "Cargando documentos...")}</div> : null}
+                    {!isLoading && needsAttentionDocuments.length === 0 ? (
+                      <div className="empty-state">
+                        <strong>{ui("Nothing urgent right now.", "Nada urgente por ahora.")}</strong>
+                        <span>
+                          {ui(
+                            "New uploads and uncertain answers will appear here first.",
+                            "Nuevas cargas y respuestas inciertas aparecerán aquí primero."
+                          )}
+                        </span>
+                      </div>
+                    ) : null}
+                    {needsAttentionDocuments.map((document) => (
+                      <button
+                        key={document.id}
+                        className="priority-item"
+                        onClick={() => {
+                          setActiveView("review");
+                          setSelectedId(document.id);
+                        }}
+                      >
+                        <div className={`memory-icon ${statusTone(document.status, document.review_status)}`}>
+                          <Icon>{iconPaths.shield}</Icon>
+                        </div>
+                        <div>
+                          <strong>{documentTitle(document, uiLanguage)}</strong>
+                          <span>{documentMeta(document, uiLanguage)}</span>
+                        </div>
+                        <span className={`status ${statusClass(document.status, document.review_status)}`}>
+                          {statusLabel(document.status, document.review_status, uiLanguage)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="panel command-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>{ui("Recent Source Material", "Fuentes recientes")}</h2>
+                      <p>
+                        {ui(
+                          "The newest raw documents Ayudita can use as proof.",
+                          "Los documentos originales más recientes que Ayudita puede usar como prueba."
+                        )}
+                      </p>
+                    </div>
+                    <button className="small-button" onClick={() => setActiveView("documents")}>
+                      {ui("Open library", "Abrir biblioteca")}
+                    </button>
+                  </div>
+                  <div className="memory-list compact-list">
+                    {!isLoading && recentDocuments.length === 0 ? (
+                      <div className="empty-state">
+                        <strong>{ui("No documents yet.", "Aún no hay documentos.")}</strong>
+                        <span>{ui("Upload the first source above.", "Sube la primera fuente arriba.")}</span>
+                      </div>
+                    ) : null}
+                    {recentDocuments.map((document) => (
+                      <button
+                        key={document.id}
+                        className="memory-item"
+                        onClick={() => {
+                          setActiveView("documents");
+                          setSelectedId(document.id);
+                        }}
+                      >
+                        <div className={`memory-icon ${statusTone(document.status, document.review_status)}`}>
+                          <Icon>{iconPaths.doc}</Icon>
+                        </div>
+                        <div>
+                          <h3>{documentTitle(document, uiLanguage)}</h3>
+                          <p>{documentMeta(document, uiLanguage)}</p>
+                          <MemoryBadges document={document} language={uiLanguage} />
+                        </div>
+                        <span className={`status ${statusClass(document.status, document.review_status)}`}>
+                          {statusLabel(document.status, document.review_status, uiLanguage)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              <aside className="command-side">
+                <section className="panel command-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>{ui("Trust Snapshot", "Snapshot de confianza")}</h2>
+                      <p>{ui("The health of answers, proof, and memory.", "La salud de respuestas, pruebas y memoria.")}</p>
+                    </div>
+                  </div>
+                  <div className="command-stats">
+                    <div>
+                      <strong>{pendingCount}</strong>
+                      <span>{ui("waiting for review", "esperando revisión")}</span>
+                    </div>
+                    <div>
+                      <strong>{flaggedCount}</strong>
+                      <span>{ui("flagged", "marcados")}</span>
+                    </div>
+                    <div>
+                      <strong>{memoryCount}</strong>
+                      <span>{ui("searchable memories", "memorias buscables")}</span>
+                    </div>
+                    <div>
+                      <strong>{credentialCount}</strong>
+                      <span>{ui("credential sources", "fuentes credenciales")}</span>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="panel command-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>{ui("Memory Confidence", "Confianza de memoria")}</h2>
+                      <p>
+                        {ui(
+                          "Best experience rule: answer fast, then offer proof.",
+                          "Regla de mejor experiencia: contestar rápido y luego ofrecer prueba."
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="trust-steps">
+                    <div>
+                      <strong>{ui("1. Answer from memory", "1. Contestar desde memoria")}</strong>
+                      <span>{ui("Use saved labels, credential facts, and recent source matches.", "Usar etiquetas guardadas, credenciales y fuentes recientes.")}</span>
+                    </div>
+                    <div>
+                      <strong>{ui("2. Show why it is trusted", "2. Mostrar por qué se confía")}</strong>
+                      <span>{ui("Reference the source document and exact extracted fact.", "Referenciar el documento fuente y el fact extraído.")}</span>
+                    </div>
+                    <div>
+                      <strong>{ui("3. Offer the original", "3. Ofrecer el original")}</strong>
+                      <span>{ui("Let the user ask for the image, PDF, or document when they want proof.", "Dejar que el usuario pida imagen, PDF o documento cuando quiera prueba.")}</span>
+                    </div>
+                  </div>
+                </section>
+              </aside>
+            </section>
+          ) : (
           <div className="workspace">
             <section>
               <div className="panel">
                 <div className="panel-header">
                   <div>
-                    <h2>{ui("Received Documents", "Documentos recibidos")}</h2>
-                    <p>
-                      {ui(
-                        "Everything lands here after being saved as a raw document.",
-                        "Todo entra aquí después de guardarse como raw document."
-                      )}
-                    </p>
+                    <h2>{listTitle}</h2>
+                    <p>{listDescription}</p>
                   </div>
                   <span className="status review">
-                    {ui(`${pendingCount} to review`, `${pendingCount} por revisar`)}
+                    {activeView === "review"
+                      ? ui(`${reviewDocuments.length} to review`, `${reviewDocuments.length} por revisar`)
+                      : activeView === "memory"
+                        ? ui(`${memoryDocuments.length} memories`, `${memoryDocuments.length} memorias`)
+                        : ui(`${pendingCount} to review`, `${pendingCount} por revisar`)}
                   </span>
                 </div>
-                <div className="inbox-tabs">
-                  {[
-                    ["all", ui("All", "Todo")],
-                    ["memory", ui("Memory", "Memoria")],
-                    ["credentials", ui("Credentials", "Credenciales")],
-                    ["whatsapp", "WhatsApp"],
-                    ["pending", ui("Pending", "Pendiente")],
-                    ["received", ui("Received", "Recibido")],
-                    ["extracted", ui("Extracted", "Extraído")],
-                    ["explained", ui("Explained", "Explicado")],
-                    ["disabled", ui("Do not search", "No buscar")],
-                    ["failed", ui("Failed", "Falló")]
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      className={`chip ${filter === value ? "active" : ""}`}
-                      onClick={() => setFilter(value as Filter)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {activeView === "documents" ? (
+                  <div className="inbox-tabs">
+                    {[
+                      ["all", ui("All", "Todo")],
+                      ["memory", ui("Memory", "Memoria")],
+                      ["credentials", ui("Credentials", "Credenciales")],
+                      ["whatsapp", "WhatsApp"],
+                      ["pending", ui("Pending", "Pendiente")],
+                      ["received", ui("Received", "Recibido")],
+                      ["extracted", ui("Extracted", "Extraído")],
+                      ["explained", ui("Explained", "Explicado")],
+                      ["disabled", ui("Do not search", "No buscar")],
+                      ["failed", ui("Failed", "Falló")]
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        className={`chip ${filter === value ? "active" : ""}`}
+                        onClick={() => setFilter(value as Filter)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="section-hint">
+                    {activeView === "review"
+                      ? ui("Only uncertain, failed, or pending items show here.", "Aquí solo aparecen elementos inciertos, fallidos o pendientes.")
+                      : ui("Only documents that affect memory show here.", "Aquí solo aparecen documentos que afectan la memoria.")}
+                  </div>
+                )}
 
                 <div className="memory-list">
                   {isLoading ? <div className="empty-state">{ui("Loading documents...", "Cargando documentos...")}</div> : null}
@@ -784,6 +1031,7 @@ export default function Home() {
               </section>
             </aside>
           </div>
+          )}
         </main>
       </div>
     </div>

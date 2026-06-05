@@ -418,7 +418,7 @@ svg {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -466,6 +466,131 @@ svg {
   grid-template-columns: minmax(0, 1fr) 430px;
   gap: 20px;
   align-items: start;
+}
+
+.command-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
+}
+
+.command-main,
+.command-side {
+  display: grid;
+  gap: 20px;
+}
+
+.command-panel {
+  min-width: 0;
+}
+
+.priority-list {
+  display: grid;
+}
+
+.priority-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.priority-item:hover {
+  background: #fbfaf8;
+}
+
+.priority-item strong,
+.priority-item span {
+  display: block;
+}
+
+.priority-item strong {
+  font-size: 14px;
+}
+
+.priority-item span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.priority-item > .status {
+  margin-top: 0;
+}
+
+.compact-list .memory-item {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.section-hint {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.command-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.command-stats div {
+  min-height: 86px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfaf8;
+}
+
+.command-stats strong {
+  display: block;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.command-stats span {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.trust-steps {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.trust-steps div {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfaf8;
+}
+
+.trust-steps strong {
+  display: block;
+  font-size: 13px;
+}
+
+.trust-steps span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .panel {
@@ -1091,9 +1216,14 @@ svg {
   }
 
   .intro,
+  .command-layout,
   .workspace,
   .upload-card {
     grid-template-columns: 1fr;
+  }
+
+  .metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .trust-note {
@@ -1130,8 +1260,18 @@ svg {
   }
 
   .detail-actions,
+  .command-stats,
   .mini-grid,
   .metric-strip {
     grid-template-columns: 1fr;
+  }
+
+  .priority-item {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .priority-item > .status {
+    grid-column: 2;
+    justify-self: start;
   }
 }
