@@ -772,6 +772,18 @@ export async function rememberPendingSourceDocument(input: {
   });
 }
 
+export async function recordSourceDocumentSent(input: {
+  documentId: string;
+  userPhone: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${PENDING_SOURCE_DOCUMENT_PREFIX}${input.documentId}`,
+    answer: "sent"
+  });
+}
+
 export async function getLatestPendingSourceDocument(userPhone: string) {
   const supabase = createSupabaseServiceClient();
 
@@ -816,8 +828,10 @@ function memoryMetadataForDocument(
     (question) =>
       question.answer === "disabled" && question.question?.startsWith(DOCUMENT_MEMORY_DISABLED_PREFIX)
   );
-  const sourceRequestCount = questions.filter((question) =>
-    question.question?.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)
+  const sourceRequestCount = questions.filter(
+    (question) =>
+      question.answer === "sent" &&
+      question.question?.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)
   ).length;
   const memoryActivity = questions.filter(isMemoryUseQuestion);
   const lastMemoryUse = memoryActivity[0]?.created_at ?? null;

@@ -20,6 +20,7 @@ import {
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
   recordMemoryAnswer,
+  recordSourceDocumentSent,
   rememberPendingMemorySearch,
   rememberDocumentAlias,
   rememberLastMemoryDocument,
@@ -569,7 +570,49 @@ async function processTextSourceDocumentMessage(input: {
   if (!choice) return null;
 
   const pending = await getLatestPendingSourceDocument(input.from);
-  if (!pending) return null;
+  if (!pending) {
+    if (choice === "no") return null;
+
+    const documentId = await getLatestMemoryDocumentReference(input.from);
+    if (!documentId) {
+      await sendTextIfConfigured(input.from, missingSourceDocumentContextMessage(languageForText(input.text)));
+
+      return {
+        ok: true,
+        messageId: input.messageId ?? null,
+        action: "source_document_missing_context"
+      };
+    }
+
+    const document = await getDecoderDocument(documentId);
+    if (!document) {
+      await sendTextIfConfigured(input.from, missingSourceDocumentContextMessage(languageForText(input.text)));
+
+      return {
+        ok: true,
+        messageId: input.messageId ?? null,
+        documentId,
+        action: "source_document_missing"
+      };
+    }
+
+    await sendSourceDocument({
+      to: input.from,
+      document,
+      language: languageForText(input.text)
+    });
+    await recordSourceDocumentSent({
+      documentId: document.id,
+      userPhone: input.from
+    });
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: document.id,
+      action: "source_document_sent_from_latest"
+    };
+  }
 
   await resolvePendingSourceDocument(pending.id, choice === "send" ? "sent" : "declined");
 
@@ -1104,7 +1147,7 @@ function confirmationChoiceFromText(text: string): "yes" | "no" | null {
 function sourceDocumentChoiceFromText(text: string): "send" | "no" | null {
   const normalized = normalizeMemoryText(text).trim();
   if (
-    /^(?:source_document_send|send image|send photo|send picture|send document|send pdf|send source|image|photo|picture|document|pdf|manda imagen|mandar imagen|manda foto|mandar foto|manda documento|mandar documento|manda pdf|mandar pdf)$/i.test(
+    /^(?:source_document_send|yes|y|yeah|yep|sure|ok|okay|send it|send me it|send that|send this|send image|send photo|send picture|send document|send pdf|send source|show proof|show source|show it|show me|proof|source|original|actual image|image|photo|picture|document|pdf|si|s|claro|va|mandalo|mandala|mandamelo|mandamela|manda eso|manda imagen|mandar imagen|manda foto|mandar foto|manda documento|mandar documento|manda pdf|mandar pdf|muestra prueba|muestrame prueba|muestra fuente|muestrame fuente|muestra imagen|muestrame imagen|prueba|fuente|original)$/i.test(
       normalized
     )
   ) {
@@ -1369,6 +1412,14 @@ function sourceDocumentCaption(document: DecoderDocumentDetail, language: "en" |
 function sourceDocumentDeclinedMessage(language: "en" | "es") {
   if (language === "en") return "Okay. I will keep the original saved in memory.";
   return "Esta bien. Voy a mantener el original guardado en memoria.";
+}
+
+function missingSourceDocumentContextMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Which source do you mean? Ask the memory question again, then say \"send image\" and I will send the exact proof.";
+  }
+
+  return "Cual fuente quieres? Haz la pregunta de memoria otra vez, luego di \"manda imagen\" y te mando la prueba exacta.";
 }
 
 function sourceDocumentFilename(document: DecoderDocumentDetail) {
