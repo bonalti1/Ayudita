@@ -330,10 +330,10 @@ export default function Home() {
           <section className="intro">
             <div>
               <p className="eyebrow">Decoder v1</p>
-              <h1>Explica una carta con evidencia, sin inventar.</h1>
+              <h1>Explica documentos con evidencia, sin inventar.</h1>
               <p>
-                Sube una foto o PDF. Ayudita guarda el original primero y lo pone en cola para
-                extraer facts, generar explicación en español y revisar antes de responder.
+                Sube una foto, PDF o screenshot. Ayudita guarda el original primero, detecta el
+                tipo de documento y extrae facts antes de explicar en español.
               </p>
             </div>
             <div className="trust-note">
@@ -416,7 +416,7 @@ export default function Home() {
                   {!isLoading && visibleDocuments.length === 0 ? (
                     <div className="empty-state">
                       <strong>No hay documentos en esta vista.</strong>
-                      <span>Sube una carta para empezar el flujo v1.</span>
+                      <span>Sube un documento o screenshot para empezar el flujo v1.</span>
                     </div>
                   ) : null}
 
@@ -568,15 +568,15 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>Próxima etapa</h2>
-                    <p>Extracción separada de explicación.</p>
+                    <p>Clasificación antes de explicación.</p>
                   </div>
                 </div>
                 <div className="review">
                   <div className="review-item">
-                    <strong>Step 5: explicación con facts solamente</strong>
+                    <strong>Step 6: detector de tipo de documento</strong>
                     <p>
-                      Ahora el reviewer puede aprobar, marcar o pedir una foto mas clara. Aprobar
-                      solo deja listo para enviar; WhatsApp se conecta en el siguiente paso.
+                      Ayudita ahora clasifica cartas, screenshots, recibos, bills y otros documentos
+                      antes de extraer facts. La explicación solo usa lo que quedó guardado.
                     </p>
                     <button className="small-button confirm">Activo</button>
                   </div>
@@ -587,12 +587,12 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>WhatsApp</h2>
-                    <p>El mismo flujo entrará por foto de WhatsApp.</p>
+                    <p>El mismo flujo entra por foto de WhatsApp.</p>
                   </div>
                 </div>
                 <div className="whatsapp-thread">
                   <div className="thread-row user">
-                    <div className="bubble user">Te mando una foto de la carta.</div>
+                    <div className="bubble user">Te mando una foto del documento.</div>
                     <span className="thread-time">Entrada</span>
                   </div>
                   <div className="thread-row">
@@ -621,10 +621,20 @@ function InfoField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function documentTitle(document: Pick<DecoderDocumentSummary, "document_type" | "storage_path">) {
+function documentTitle(
+  document: Pick<DecoderDocumentSummary, "document_type" | "document_category" | "storage_path">
+) {
   if (document.document_type) return document.document_type;
+  if (document.document_category) return categoryLabel(document.document_category);
   const fileName = document.storage_path.split("/").pop() ?? "Documento";
   return fileName.replace(/^\d+-[a-f0-9-]+-/i, "");
+}
+
+function categoryLabel(category: string) {
+  return category
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function documentMeta(

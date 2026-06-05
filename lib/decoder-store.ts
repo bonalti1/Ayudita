@@ -335,7 +335,8 @@ async function storeExtraction(documentId: string, extraction: DecoderExtraction
     .from("documents")
     .update({
       status: "extracted",
-      document_type: extraction.document_type.value,
+      document_type: documentTypeTitle(extraction),
+      document_category: extraction.document_category,
       language: extraction.language_detected
     })
     .eq("id", documentId);
@@ -372,7 +373,13 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
     });
   };
 
+  single("document_category", {
+    value: categoryLabel(extraction.document_category),
+    provenance: "INFERRED",
+    source_text: extraction.document_type.source_text
+  });
   single("document_type", extraction.document_type);
+  single("document_summary", extraction.detected_purpose, "detected_purpose");
   single("issuing_agency", extraction.issuing_agency);
   single("recipient_name", extraction.recipient_name);
   single("case_number", extraction.case_or_receipt_number);
@@ -405,6 +412,19 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
     });
   }
 
+  for (const fact of extraction.general_facts) {
+    rows.push({
+      document_id: documentId,
+      fact_type: fact.category,
+      label: fact.label,
+      fact_value: fact.value,
+      provenance_type: fact.provenance,
+      source_text: fact.source_text,
+      page_number: fact.page_number,
+      model
+    });
+  }
+
   for (const unreadableRegion of extraction.unreadable_regions) {
     rows.push({
       document_id: documentId,
@@ -419,6 +439,19 @@ function extractionToFactRows(documentId: string, extraction: DecoderExtraction,
   }
 
   return rows;
+}
+
+function documentTypeTitle(extraction: DecoderExtraction) {
+  const type = extraction.document_type.value?.trim();
+  if (type) return type;
+  return categoryLabel(extraction.document_category);
+}
+
+function categoryLabel(category: string) {
+  return category
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function normalizeUserPhone(userPhone?: string) {

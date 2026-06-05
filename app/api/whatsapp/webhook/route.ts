@@ -120,7 +120,7 @@ async function processMessage(message: WhatsAppMessage) {
 
   await sendTextIfConfigured(
     from,
-    "Mandame una foto o PDF de la carta que recibiste y te ayudo a entender que dice."
+    "Mandame una foto o PDF del documento, carta o screenshot que quieres entender."
   );
 
   console.log("Prompted WhatsApp sender for a document.", {
