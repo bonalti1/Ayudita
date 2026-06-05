@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { reviewDecoderDocument } from "@/lib/decoder-store";
+import { getDecoderDocument, reviewDecoderDocument } from "@/lib/decoder-store";
+import { isReviewerUnlocked } from "@/lib/reviewer-auth";
+import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 
 export const runtime = "nodejs";
 
@@ -16,6 +18,21 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!body?.action || !REVIEW_ACTIONS.has(body.action)) {
       return NextResponse.json({ error: "Invalid review action." }, { status: 400 });
+    }
+
+    if (body.action === "approve") {
+      const existingDocument = await getDecoderDocument(id);
+
+      if (!existingDocument) {
+        return NextResponse.json({ error: "Document not found." }, { status: 404 });
+      }
+
+      if (hasSensitiveFacts(existingDocument.facts) && !isReviewerUnlocked(request)) {
+        return NextResponse.json(
+          { error: "Unlock sensitive information before approving this explanation." },
+          { status: 403 }
+        );
+      }
     }
 
     const document = await reviewDecoderDocument(

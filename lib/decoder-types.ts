@@ -49,10 +49,14 @@ export type DecoderDocumentText = {
 export type DecoderDocumentSummary = DecoderDocument & {
   latest_explanation: DecoderExplanation | null;
   facts_count: number;
+  has_sensitive_info?: boolean;
+  sensitive_info_locked?: boolean;
 };
 
 export type DecoderDocumentDetail = DecoderDocument & {
   facts: DecoderFact[];
   explanations: DecoderExplanation[];
   document_text: DecoderDocumentText | null;
+  has_sensitive_info?: boolean;
+  sensitive_info_locked?: boolean;
 };

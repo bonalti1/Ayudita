@@ -9,5 +9,6 @@ export const env = {
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-  whatsappGraphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0"
+  whatsappGraphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0",
+  ayuditaReviewPassword: process.env.AYUDITA_REVIEW_PASSWORD
 };

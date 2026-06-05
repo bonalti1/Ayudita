@@ -69,11 +69,14 @@ export default function Home() {
   const [explainStatus, setExplainStatus] = useState("");
   const [reviewStatus, setReviewStatus] = useState("");
   const [sendStatus, setSendStatus] = useState("");
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockStatus, setUnlockStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -116,6 +119,39 @@ export default function Home() {
 
     const data = (await response.json()) as { document: DecoderDocumentDetail };
     setSelectedDocument(data.document);
+    setUnlockStatus("");
+  }
+
+  async function unlockSensitiveInfo(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId) return;
+
+    setIsUnlocking(true);
+    setUnlockStatus("Verificando contraseña...");
+
+    try {
+      const response = await fetch("/api/reviewer/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: unlockPassword })
+      });
+
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setUnlockStatus(data?.error ?? "No se pudo desbloquear.");
+        return;
+      }
+
+      setUnlockPassword("");
+      setUnlockStatus("Información sensible desbloqueada.");
+      await loadDocument(selectedId);
+      await refreshDocuments(selectedId);
+    } catch {
+      setUnlockStatus("No se pudo desbloquear.");
+    } finally {
+      setIsUnlocking(false);
+    }
   }
 
   async function uploadDocument(event: React.ChangeEvent<HTMLInputElement>) {
@@ -467,9 +503,29 @@ export default function Home() {
                         <div className="sensitive-note">
                           <strong>Información sensible detectada</strong>
                           <span>
-                            Revisa passwords, cuentas, direcciones o códigos visibles antes de aprobar
-                            y enviar por WhatsApp.
+                            {selectedDocument.sensitive_info_locked
+                              ? "Ingresa la contraseña de revisión para revelar passwords, cuentas, direcciones o códigos visibles."
+                              : "Revisa passwords, cuentas, direcciones o códigos visibles antes de aprobar y enviar por WhatsApp."}
                           </span>
+                          {selectedDocument.sensitive_info_locked ? (
+                            <form className="unlock-form" onSubmit={unlockSensitiveInfo}>
+                              <input
+                                type="password"
+                                placeholder="Contraseña de revisión"
+                                value={unlockPassword}
+                                onChange={(event) => setUnlockPassword(event.target.value)}
+                                disabled={isUnlocking}
+                              />
+                              <button
+                                className="small-button confirm"
+                                type="submit"
+                                disabled={isUnlocking || !unlockPassword.trim()}
+                              >
+                                {isUnlocking ? "Revisando..." : "Desbloquear"}
+                              </button>
+                            </form>
+                          ) : null}
+                          {unlockStatus ? <span>{unlockStatus}</span> : null}
                         </div>
                       ) : null}
                       <div className="fields">

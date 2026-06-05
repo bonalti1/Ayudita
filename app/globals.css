@@ -669,6 +669,24 @@ svg {
   color: #8d4638;
 }
 
+.unlock-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.unlock-form input {
+  min-width: 0;
+  border: 1px solid #e3c3ba;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 10px;
+}
+
 .review-actions {
   margin-top: 18px;
   padding-top: 16px;
