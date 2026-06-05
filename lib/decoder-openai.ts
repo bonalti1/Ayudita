@@ -139,12 +139,32 @@ export async function answerFollowUpWithOpenAI(input: {
     ]
   });
 
-  const body = response.output_text?.trim();
+  const body = sanitizeDecisionLanguage(response.output_text?.trim() ?? "", input.targetLanguage);
   if (!body) {
     throw new Error("OpenAI returned an empty follow-up response.");
   }
 
   return { body, model: EXPLAIN_MODEL };
+}
+
+function sanitizeDecisionLanguage(body: string, language: "en" | "es") {
+  if (!body) return body;
+
+  if (language === "en") {
+    return body
+      .replace(/\b[Yy]ou need to pay\b/g, "The document says the amount due is")
+      .replace(/\b[Yy]ou have to pay\b/g, "The document says the amount due is")
+      .replace(/\b[Yy]ou must pay\b/g, "The document says the amount due is")
+      .replace(/\b[Yy]ou need to\b/g, "The document asks you to")
+      .replace(/\b[Yy]ou have to\b/g, "The document asks you to")
+      .replace(/\b[Yy]ou must\b/g, "The document asks you to");
+  }
+
+  return body
+    .replace(/\b[Dd]ebes pagar\b/g, "El documento dice que el monto a pagar es")
+    .replace(/\b[Tt]ienes que pagar\b/g, "El documento dice que el monto a pagar es")
+    .replace(/\b[Dd]ebes\b/g, "El documento pide")
+    .replace(/\b[Tt]ienes que\b/g, "El documento pide");
 }
 
 function buildInputContent(mimeType: string, base64: string, fileName: string) {
