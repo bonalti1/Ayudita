@@ -601,6 +601,19 @@ async function processTextMemoryMessage(input: {
   if (!question || !looksLikeMemoryQuestion(question)) return null;
 
   if (needsMemoryClarification(question)) {
+    const lastMemoryDocumentId = await getLatestMemoryDocumentReference(input.from);
+    if (lastMemoryDocumentId) {
+      const lastMemoryDocument = await getDecoderDocument(lastMemoryDocumentId);
+      if (lastMemoryDocument) {
+        return answerSelectedMemoryDocument({
+          from: input.from,
+          question,
+          messageId: input.messageId,
+          document: lastMemoryDocument
+        });
+      }
+    }
+
     await rememberPendingMemorySearch({
       userPhone: input.from,
       query: question
@@ -748,6 +761,7 @@ async function processTextFollowUpMessage(input: {
 }) {
   const question = input.text.trim();
   if (!question) return null;
+  if (looksLikeMemoryQuestion(question) || isCredentialMemoryQuestion(question)) return null;
 
   const answer = await answerLatestWhatsAppDocumentQuestion({
     userPhone: input.from,
@@ -822,15 +836,9 @@ function selectionIndexFromText(text: string) {
 }
 
 function needsMemoryClarification(text: string) {
-  const normalized = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  if (!isCredentialMemoryQuestion(text)) return false;
 
-  const credentialRequest =
-    /\b(wifi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(normalized);
-  if (!credentialRequest) return false;
-
+  const normalized = normalizeMemoryText(text);
   const hasSpecificContext =
     /\b(home|house|office|work|business|friend|neighbor|casa|hogar|oficina|trabajo|negocio|amigo|amiga|vecino|vecina)\b/.test(
       normalized
@@ -840,14 +848,24 @@ function needsMemoryClarification(text: string) {
 }
 
 function shouldAutoAnswerBestMemoryMatch(text: string) {
-  const normalized = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  const normalized = normalizeMemoryText(text);
 
   return /\b(wifi|wi fi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(
     normalized
   );
+}
+
+function isCredentialMemoryQuestion(text: string) {
+  return /\b(wifi|wi fi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(
+    normalizeMemoryText(text)
+  );
+}
+
+function normalizeMemoryText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 async function askForDocumentLabel(documentId: string, to: string, language?: string | null) {
