@@ -3,6 +3,7 @@ import {
   createRawDecoderDocument,
   answerDecoderDocumentQuestion,
   answerLatestWhatsAppDocumentQuestion,
+  disableDocumentMemory,
   explainDecoderDocument,
   extractDecoderDocument,
   findWhatsAppMemoryDocuments,
@@ -456,13 +457,18 @@ async function processTextDocumentLabelMessage(input: {
   await resolvePendingDocumentLabel(pending.id);
 
   if (isDoNotSaveMemoryLabel(cleanedLabel)) {
+    await disableDocumentMemory({
+      documentId: pending.documentId,
+      userPhone: input.from,
+      reason: cleanedLabel
+    });
     await sendTextIfConfigured(input.from, labelSkippedMessage(languageForText(label)));
 
     return {
       ok: true,
       messageId: input.messageId ?? null,
       documentId: pending.documentId,
-      action: "document_label_skipped"
+      action: "document_memory_disabled"
     };
   }
 
@@ -765,7 +771,7 @@ function documentLabelFromText(text: string) {
 }
 
 function isDoNotSaveMemoryLabel(label: string) {
-  return /\b(dont save|don't save|do not save|skip|none|nada|no guardar|no save|no memory|sin memoria)\b/i.test(
+  return /\b(dont save|don't save|do not save|skip|none|nada|no guardar|no save|no memory|sin memoria|not mine|not my|no es mio|no es mio|no mio|no es de mi|no es m[ií]o)\b/i.test(
     label
   );
 }
@@ -788,10 +794,10 @@ function looksLikeFeedbackMessage(normalizedText: string) {
 
 function documentLabelPrompt(language: "en" | "es") {
   if (language === "en") {
-    return "For future search, how should I label this document? Reply with a short label like mine, not mine, home, office, business, client, friend, or say do not save for memory.";
+    return "Should I save this for future search? Reply with a short label like mine, home, office, business, client, or friend. If it is not yours or you only needed this once, reply not mine or do not save.";
   }
 
-  return "Para buscarlo despues, como quieres etiquetar este documento? Responde con algo corto como mio, no es mio, casa, oficina, negocio, cliente, amigo, o di no guardar en memoria.";
+  return "Quieres que guarde esto para buscarlo despues? Responde con una etiqueta corta como mio, casa, oficina, negocio, cliente o amigo. Si no es tuyo o solo lo necesitabas una vez, responde no es mio o no guardar.";
 }
 
 function labelSavedMessage(label: string, language: "en" | "es") {
@@ -800,8 +806,11 @@ function labelSavedMessage(label: string, language: "en" | "es") {
 }
 
 function labelSkippedMessage(language: "en" | "es") {
-  if (language === "en") return "Okay. I will not add a memory label for this document.";
-  return "Esta bien. No agregare una etiqueta de memoria para este documento.";
+  if (language === "en") {
+    return "Okay. I will not use this document in future memory searches. You can still ask follow-up questions about it right now.";
+  }
+
+  return "Esta bien. No usare este documento en busquedas futuras de memoria. Todavia puedes hacer preguntas sobre el documento ahorita.";
 }
 
 function languageForText(text: string): "en" | "es" {

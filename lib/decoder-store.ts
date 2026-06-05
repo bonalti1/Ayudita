@@ -21,6 +21,7 @@ const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
 const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:";
 const PENDING_MEMORY_SEARCH_PREFIX = "whatsapp:pending_memory_search:";
 const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
+const DOCUMENT_MEMORY_DISABLED_PREFIX = "whatsapp:document_memory_disabled:";
 const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
 const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
 
@@ -336,9 +337,16 @@ export async function findWhatsAppMemoryDocuments(input: {
 
   if (!details.length) return [];
 
-  const aliasesByDocumentId = await getDocumentAliasesById(details.map((document) => document.id));
+  const disabledDocumentIds = await getMemoryDisabledDocumentIds(details.map((document) => document.id));
+  const searchableDetails = details.filter((document) => !disabledDocumentIds.has(document.id));
 
-  const ranked = details
+  if (!searchableDetails.length) return [];
+
+  const aliasesByDocumentId = await getDocumentAliasesById(
+    searchableDetails.map((document) => document.id)
+  );
+
+  const ranked = searchableDetails
     .map((document, index) => ({
       document,
       score: scoreMemoryDocument(input.query, document, index, aliasesByDocumentId.get(document.id) ?? [])
@@ -490,6 +498,21 @@ export async function rememberDocumentAlias(input: {
     userPhone: input.userPhone,
     question: `${DOCUMENT_ALIAS_PREFIX}${alias}`,
     answer: "saved"
+  });
+}
+
+export async function disableDocumentMemory(input: {
+  documentId: string;
+  userPhone: string;
+  reason: string;
+}) {
+  const reason = cleanAlias(input.reason) || "not_saved";
+
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${DOCUMENT_MEMORY_DISABLED_PREFIX}${reason}`,
+    answer: "disabled"
   });
 }
 
@@ -901,6 +924,28 @@ async function getDocumentAliasesById(documentIds: string[]) {
   }
 
   return aliasesByDocumentId;
+}
+
+async function getMemoryDisabledDocumentIds(documentIds: string[]) {
+  const disabledDocumentIds = new Set<string>();
+  if (!documentIds.length) return disabledDocumentIds;
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("document_id")
+    .in("document_id", documentIds)
+    .eq("answer", "disabled")
+    .like("question", `${DOCUMENT_MEMORY_DISABLED_PREFIX}%`);
+
+  if (error) throw error;
+
+  for (const row of data ?? []) {
+    const documentId = row.document_id as string | null;
+    if (documentId) disabledDocumentIds.add(documentId);
+  }
+
+  return disabledDocumentIds;
 }
 
 function cleanAlias(alias: string) {
