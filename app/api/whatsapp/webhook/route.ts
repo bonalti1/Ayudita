@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
-import { createRawDecoderDocument } from "@/lib/decoder-store";
+import {
+  createRawDecoderDocument,
+  explainDecoderDocument,
+  extractDecoderDocument,
+  getDecoderDocument,
+  listDecoderDocuments,
+  reviewDecoderDocument
+} from "@/lib/decoder-store";
 import { env } from "@/lib/env";
+import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-auth";
+import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 import { downloadWhatsAppMedia, sendWhatsAppText, whatsappFileName } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -118,6 +127,16 @@ async function processMessage(message: WhatsAppMessage) {
     });
   }
 
+  if (message.type === "text") {
+    const unlockResult = await processTextUnlockMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (unlockResult) return unlockResult;
+  }
+
   await sendTextIfConfigured(
     from,
     "Mandame una foto o PDF del documento, carta o screenshot que quieres entender."
@@ -159,7 +178,7 @@ async function ingestMediaMessage(input: {
 
   await sendTextIfConfigured(
     input.from,
-    "Recibi tu documento. Primero lo guarde de forma segura y lo pondre en revision."
+    "Recibi tu documento. Primero lo guarde de forma segura. Ahora voy a revisar si tiene informacion sensible."
   );
 
   console.log("Stored WhatsApp media document.", {
@@ -169,13 +188,108 @@ async function ingestMediaMessage(input: {
     mimeType
   });
 
+  const action = await processStoredDocumentForWhatsApp(document.id, input.from);
+
   return {
     ok: true,
     messageId: input.messageId ?? null,
     documentId: document.id,
-    status: document.status,
-    reviewStatus: document.review_status
+    status: action.status,
+    reviewStatus: action.reviewStatus,
+    action: action.action
   };
+}
+
+async function processStoredDocumentForWhatsApp(documentId: string, to: string) {
+  const extractedDocument = await extractDecoderDocument(documentId);
+
+  if (hasSensitiveFacts(extractedDocument.facts)) {
+    if (!isReviewerGateEnabled()) {
+      await sendTextIfConfigured(
+        to,
+        "Encontre informacion sensible en este documento, pero falta configurar la contraseña de revision."
+      );
+    } else {
+      await sendTextIfConfigured(
+        to,
+        "Encontre informacion sensible en este documento. Para revelarla por WhatsApp, responde con la contraseña de revision."
+      );
+    }
+
+    return {
+      status: extractedDocument.status,
+      reviewStatus: extractedDocument.review_status,
+      action: "sensitive_password_requested"
+    };
+  }
+
+  const explainedDocument = await explainDecoderDocument(documentId);
+  await reviewDecoderDocument(documentId, "approve");
+  await sendTextIfConfigured(to, explainedDocument.explanations[0]?.body ?? "Documento explicado.");
+
+  return {
+    status: "explained",
+    reviewStatus: "reviewed",
+    action: "explained_and_sent"
+  };
+}
+
+async function processTextUnlockMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const pendingDocument = await latestSensitivePendingDocument(input.from);
+  if (!pendingDocument) return null;
+
+  if (!isReviewerPasswordValid(input.text.trim())) {
+    await sendTextIfConfigured(
+      input.from,
+      "Este documento tiene informacion sensible. Responde con la contraseña correcta de revision para revelarla."
+    );
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: pendingDocument.id,
+      action: "sensitive_password_rejected"
+    };
+  }
+
+  const explainedDocument = pendingDocument.explanations.length
+    ? pendingDocument
+    : await explainDecoderDocument(pendingDocument.id);
+
+  await reviewDecoderDocument(pendingDocument.id, "approve");
+  await sendTextIfConfigured(
+    input.from,
+    explainedDocument.explanations[0]?.body ?? "No pude generar la explicacion."
+  );
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: pendingDocument.id,
+    action: "sensitive_explanation_unlocked_and_sent"
+  };
+}
+
+async function latestSensitivePendingDocument(userPhone: string) {
+  const documents = await listDecoderDocuments();
+  const candidates = documents.filter(
+    (document) =>
+      document.source === "whatsapp" &&
+      document.user_phone === userPhone &&
+      document.review_status !== "reviewed" &&
+      (document.status === "extracted" || document.status === "explained")
+  );
+
+  for (const candidate of candidates) {
+    const detail = await getDecoderDocument(candidate.id);
+    if (detail && hasSensitiveFacts(detail.facts)) return detail;
+  }
+
+  return null;
 }
 
 async function sendTextIfConfigured(to: string, body: string) {
