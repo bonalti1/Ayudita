@@ -649,7 +649,7 @@ async function answerMemoryQuestion(input: {
     };
   }
 
-  if (documents.length > 1) {
+  if (documents.length > 1 && !shouldAutoAnswerBestMemoryMatch(input.question)) {
     await rememberPendingMemorySelection({
       userPhone: input.from,
       question: input.question,
@@ -837,6 +837,17 @@ function needsMemoryClarification(text: string) {
     ) || /\b[A-Z0-9][A-Z0-9_-]{3,}\b/.test(text);
 
   return !hasSpecificContext;
+}
+
+function shouldAutoAnswerBestMemoryMatch(text: string) {
+  const normalized = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return /\b(wifi|wi fi|password|network|ssid|credential|contrasena|red|clave|credencial)\b/.test(
+    normalized
+  );
 }
 
 async function askForDocumentLabel(documentId: string, to: string, language?: string | null) {
