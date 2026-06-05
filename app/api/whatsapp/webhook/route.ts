@@ -28,7 +28,12 @@ import {
 import { env } from "@/lib/env";
 import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-auth";
 import { hasSensitiveFacts } from "@/lib/sensitive-documents";
-import { downloadWhatsAppMedia, sendWhatsAppText, whatsappFileName } from "@/lib/whatsapp";
+import {
+  downloadWhatsAppMedia,
+  sendWhatsAppReplyButtons,
+  sendWhatsAppText,
+  whatsappFileName
+} from "@/lib/whatsapp";
 import type { DecoderDocumentDetail } from "@/lib/decoder-types";
 
 export const runtime = "nodejs";
@@ -49,6 +54,18 @@ type WhatsAppMessage = {
   type?: string;
   text?: {
     body?: string;
+  };
+  interactive?: {
+    type?: string;
+    button_reply?: {
+      id?: string;
+      title?: string;
+    };
+    list_reply?: {
+      id?: string;
+      title?: string;
+      description?: string;
+    };
   };
   image?: {
     id?: string;
@@ -113,6 +130,17 @@ function getMessages(payload: WhatsAppWebhookPayload) {
   );
 }
 
+function getMessageText(message: WhatsAppMessage) {
+  return (
+    message.text?.body ??
+    message.interactive?.button_reply?.title ??
+    message.interactive?.button_reply?.id ??
+    message.interactive?.list_reply?.title ??
+    message.interactive?.list_reply?.id ??
+    ""
+  );
+}
+
 async function processMessage(message: WhatsAppMessage) {
   const from = message.from;
 
@@ -149,10 +177,12 @@ async function processMessage(message: WhatsAppMessage) {
     });
   }
 
-  if (message.type === "text") {
+  if (message.type === "text" || message.type === "interactive") {
+    const text = getMessageText(message);
+
     const unlockResult = await processTextUnlockMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -160,7 +190,7 @@ async function processMessage(message: WhatsAppMessage) {
 
     const memorySelectionResult = await processTextMemorySelectionMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -168,7 +198,7 @@ async function processMessage(message: WhatsAppMessage) {
 
     const documentLabelResult = await processTextDocumentLabelMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -176,7 +206,7 @@ async function processMessage(message: WhatsAppMessage) {
 
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -184,7 +214,7 @@ async function processMessage(message: WhatsAppMessage) {
 
     const memoryResult = await processTextMemoryMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -192,7 +222,7 @@ async function processMessage(message: WhatsAppMessage) {
 
     const followUpResult = await processTextFollowUpMessage({
       from,
-      text: message.text?.body ?? "",
+      text,
       messageId: message.id
     });
 
@@ -526,7 +556,11 @@ async function processTextMemoryMessage(input: {
       userPhone: input.from,
       query: question
     });
-    await sendTextIfConfigured(input.from, memoryClarificationMessage(languageForText(question)));
+    await sendButtonsIfConfigured({
+      to: input.from,
+      body: memoryClarificationMessage(languageForText(question)),
+      buttons: memoryClarificationButtons(languageForText(question))
+    });
 
     return {
       ok: true,
@@ -573,10 +607,11 @@ async function answerMemoryQuestion(input: {
       documentIds: documents.map((match) => match.id),
       aliasToRemember: input.aliasToRemember
     });
-    await sendTextIfConfigured(
-      input.from,
-      memorySelectionMessage(documents, languageForText(input.question))
-    );
+    await sendButtonsIfConfigured({
+      to: input.from,
+      body: memorySelectionMessage(documents, languageForText(input.question)),
+      buttons: memorySelectionButtons(documents)
+    });
 
     return {
       ok: true,
@@ -728,7 +763,7 @@ function looksLikeNewDocumentQuestion(text: string) {
 }
 
 function selectionIndexFromText(text: string) {
-  const match = text.trim().match(/^([1-3])[\).:\s]*$/);
+  const match = text.trim().match(/^(?:memory_select_)?([1-3])[\).:\s]*$/i);
   if (!match) return null;
   return Number(match[1]) - 1;
 }
@@ -756,7 +791,13 @@ async function askForDocumentLabel(documentId: string, to: string, language?: st
     documentId,
     userPhone: to
   });
-  await sendTextIfConfigured(to, documentLabelPrompt(language === "en" ? "en" : "es"));
+
+  const promptLanguage = language === "en" ? "en" : "es";
+  await sendButtonsIfConfigured({
+    to,
+    body: documentLabelPrompt(promptLanguage),
+    buttons: documentLabelButtons(promptLanguage)
+  });
 }
 
 function documentLabelFromText(text: string) {
@@ -794,10 +835,26 @@ function looksLikeFeedbackMessage(normalizedText: string) {
 
 function documentLabelPrompt(language: "en" | "es") {
   if (language === "en") {
-    return "Should I save this for future search? Reply with a short label like mine, home, office, business, client, or friend. If it is not yours or you only needed this once, reply not mine or do not save.";
+    return "Should I save this for future search? Pick an option below, or type a custom label like home, office, client, or friend.";
   }
 
-  return "Quieres que guarde esto para buscarlo despues? Responde con una etiqueta corta como mio, casa, oficina, negocio, cliente o amigo. Si no es tuyo o solo lo necesitabas una vez, responde no es mio o no guardar.";
+  return "Quieres que guarde esto para buscarlo despues? Escoge una opcion abajo, o escribe una etiqueta como casa, oficina, cliente o amigo.";
+}
+
+function documentLabelButtons(language: "en" | "es") {
+  if (language === "en") {
+    return [
+      { id: "label_mine", title: "Mine" },
+      { id: "label_not_mine", title: "Not mine" },
+      { id: "label_do_not_save", title: "Do not save" }
+    ];
+  }
+
+  return [
+    { id: "label_mine", title: "Mio" },
+    { id: "label_not_mine", title: "No es mio" },
+    { id: "label_do_not_save", title: "No guardar" }
+  ];
 }
 
 function labelSavedMessage(label: string, language: "en" | "es") {
@@ -841,6 +898,22 @@ function memoryClarificationMessage(language: "en" | "es") {
   return "Cual quieres decir: casa, oficina, negocio o la red de un amigo? Tambien puedes mandarme el nombre de la red si lo sabes.";
 }
 
+function memoryClarificationButtons(language: "en" | "es") {
+  if (language === "en") {
+    return [
+      { id: "clarify_home", title: "Home" },
+      { id: "clarify_office", title: "Office" },
+      { id: "clarify_business", title: "Business" }
+    ];
+  }
+
+  return [
+    { id: "clarify_home", title: "Casa" },
+    { id: "clarify_office", title: "Oficina" },
+    { id: "clarify_business", title: "Negocio" }
+  ];
+}
+
 function memorySelectionMessage(documents: DecoderDocumentDetail[], language: "en" | "es") {
   const options = documents
     .slice(0, 3)
@@ -852,6 +925,13 @@ function memorySelectionMessage(documents: DecoderDocumentDetail[], language: "e
   }
 
   return `Encontre varios documentos guardados que podrian ser:\n${options}\nResponde con 1, 2 o 3 para contestar del correcto.`;
+}
+
+function memorySelectionButtons(documents: DecoderDocumentDetail[]) {
+  return documents.slice(0, 3).map((_, index) => ({
+    id: `memory_select_${index + 1}`,
+    title: String(index + 1)
+  }));
 }
 
 function memorySelectionInvalidMessage(language: "en" | "es") {
@@ -905,4 +985,27 @@ async function sendTextIfConfigured(to: string, body: string) {
     return;
   }
   await sendWhatsAppText(to, body);
+}
+
+async function sendButtonsIfConfigured(input: {
+  to: string;
+  body: string;
+  buttons: Array<{ id: string; title: string }>;
+}) {
+  if (!env.whatsappAccessToken || !env.whatsappPhoneNumberId) {
+    console.log("WhatsApp button reply skipped because credentials are missing.");
+    return;
+  }
+
+  try {
+    await sendWhatsAppReplyButtons(input);
+  } catch (error) {
+    console.error("WhatsApp button reply failed. Falling back to text.", error);
+    await sendWhatsAppText(input.to, fallbackButtonText(input.body, input.buttons));
+  }
+}
+
+function fallbackButtonText(body: string, buttons: Array<{ title: string }>) {
+  const options = buttons.map((button) => `- ${button.title}`).join("\n");
+  return `${body}\n\n${options}`;
 }

@@ -79,6 +79,46 @@ export async function sendWhatsAppText(to: string, body: string) {
   }
 }
 
+export async function sendWhatsAppReplyButtons(input: {
+  to: string;
+  body: string;
+  buttons: Array<{ id: string; title: string }>;
+}) {
+  const token = requireWhatsAppAccessToken();
+  const phoneNumberId = requireWhatsAppPhoneNumberId();
+  const graphBase = whatsappGraphBase();
+  const buttons = input.buttons.slice(0, 3).map((button) => ({
+    type: "reply",
+    reply: {
+      id: button.id.slice(0, 256),
+      title: button.title.slice(0, 20)
+    }
+  }));
+
+  const response = await fetch(`${graphBase}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: input.body },
+        action: { buttons }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await readWhatsAppError(response);
+    throw new Error(formatWhatsAppError("Could not send WhatsApp buttons.", response.status, error));
+  }
+}
+
 export function whatsappFileName(mediaId: string, mimeType: string, fallbackName?: string) {
   if (fallbackName?.trim()) return fallbackName.trim();
 
