@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { createSupabaseServiceClient } from "./supabase";
 import type {
   DecoderDocument,
@@ -1005,6 +1005,9 @@ function dedupeMemoryDocuments(query: string, documents: DecoderDocumentDetail[]
 }
 
 function credentialDuplicateKey(document: DecoderDocumentDetail) {
+  const factKey = credentialFactDuplicateKey(document);
+  if (factKey) return factKey;
+
   const facts = document.facts.map((fact) =>
     normalizeSearchText([fact.fact_type, fact.label, fact.fact_value, fact.source_text].filter(Boolean).join(" "))
   );
@@ -1024,6 +1027,43 @@ function credentialDuplicateKey(document: DecoderDocumentDetail) {
   if (password) return `wifi:password:${password}`;
   if (network) return `wifi:network:${network}`;
   return null;
+}
+
+function credentialFactDuplicateKey(document: DecoderDocumentDetail) {
+  const networkValues = credentialFactValues(document, ["network", "ssid", "red"]);
+  const passwordValues = credentialFactValues(document, ["password", "contrasena", "clave"]);
+
+  const network = networkValues[0] ?? null;
+  const password = passwordValues[0] ?? null;
+
+  if (network && password) return hashedCredentialKey(["wifi", "network", network, "password", password]);
+  if (password) return hashedCredentialKey(["wifi", "password", password]);
+  if (network) return hashedCredentialKey(["wifi", "network", network]);
+  return null;
+}
+
+function credentialFactValues(document: DecoderDocumentDetail, labelSignals: string[]) {
+  const values: string[] = [];
+
+  for (const fact of document.facts) {
+    const labelText = normalizeSearchText([fact.fact_type, fact.label].filter(Boolean).join(" "));
+    if (!mentionsAny(labelText, labelSignals)) continue;
+
+    const value = normalizeCredentialValue(fact.fact_value);
+    if (value && !values.includes(value)) values.push(value);
+  }
+
+  return values;
+}
+
+function normalizeCredentialValue(value?: string | null) {
+  const normalized = normalizeSearchText(value ?? "");
+  if (!normalized || credentialStopValues.has(normalized)) return null;
+  return normalized;
+}
+
+function hashedCredentialKey(parts: string[]) {
+  return `credential:${createHash("sha256").update(parts.join(":")).digest("hex")}`;
 }
 
 function firstMeaningfulMatch(text: string, patterns: RegExp[]) {
