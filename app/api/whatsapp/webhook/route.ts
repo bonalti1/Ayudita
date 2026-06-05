@@ -15,6 +15,7 @@ import {
   getLatestPendingMemorySelection,
   getLatestPendingSensitiveQuestion,
   getLatestPendingMemorySearch,
+  getLatestPendingSourceDocument,
   hasProcessedWhatsAppMessage,
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
@@ -25,10 +26,12 @@ import {
   rememberPendingDocumentLabel,
   rememberPendingMemorySelection,
   rememberPendingSensitiveQuestion,
+  rememberPendingSourceDocument,
   resolvePendingDocumentLabel,
   resolvePendingCredentialLabel,
   resolvePendingMemorySelection,
   resolvePendingMemorySearch,
+  resolvePendingSourceDocument,
   reviewDecoderDocument
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
@@ -36,6 +39,7 @@ import { isReviewerGateEnabled, isReviewerPasswordValid } from "@/lib/reviewer-a
 import { hasSensitiveFacts } from "@/lib/sensitive-documents";
 import {
   downloadWhatsAppMedia,
+  sendWhatsAppDocumentLink,
   sendWhatsAppImageLink,
   sendWhatsAppReplyButtons,
   sendWhatsAppText,
@@ -211,6 +215,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (credentialLabelResult) return credentialLabelResult;
+
+    const sourceDocumentResult = await processTextSourceDocumentMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (sourceDocumentResult) return sourceDocumentResult;
 
     const documentLabelResult = await processTextDocumentLabelMessage({
       from,
@@ -532,12 +544,67 @@ async function processTextCredentialLabelConfirmationMessage(input: {
     input.from,
     credentialLabelConfirmedMessage(pending.alias, languageForText(input.text))
   );
+  await offerSourceDocumentIfUseful({
+    to: input.from,
+    documentId: pending.documentId,
+    language: languageForText(input.text)
+  });
 
   return {
     ok: true,
     messageId: input.messageId ?? null,
     documentId: pending.documentId,
     action: "credential_label_confirmed"
+  };
+}
+
+async function processTextSourceDocumentMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const choice = sourceDocumentChoiceFromText(input.text);
+  if (!choice) return null;
+
+  const pending = await getLatestPendingSourceDocument(input.from);
+  if (!pending) return null;
+
+  await resolvePendingSourceDocument(pending.id, choice === "send" ? "sent" : "declined");
+
+  if (choice === "no") {
+    await sendTextIfConfigured(input.from, sourceDocumentDeclinedMessage(languageForText(input.text)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: pending.documentId,
+      action: "source_document_declined"
+    };
+  }
+
+  const document = await getDecoderDocument(pending.documentId);
+  if (!document) {
+    await sendTextIfConfigured(input.from, memoryNotFoundMessage(languageForText(input.text)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: pending.documentId,
+      action: "source_document_missing"
+    };
+  }
+
+  await sendSourceDocument({
+    to: input.from,
+    document,
+    language: languageForText(input.text)
+  });
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: document.id,
+    action: "source_document_sent"
   };
 }
 
@@ -838,6 +905,12 @@ async function answerSelectedMemoryDocument(input: {
       body: credentialLabelConfirmationMessage(credentialAliasToConfirm, languageForText(input.question)),
       buttons: credentialLabelConfirmationButtons(languageForText(input.question))
     });
+  } else {
+    await offerSourceDocumentIfUseful({
+      to: input.from,
+      documentId: answer.document.id,
+      language: languageForText(input.question)
+    });
   }
 
   return {
@@ -865,6 +938,11 @@ async function processTextFollowUpMessage(input: {
   if (!answer) return null;
 
   await sendTextIfConfigured(input.from, answer.body);
+  await offerSourceDocumentIfUseful({
+    to: input.from,
+    documentId: answer.document.id,
+    language: languageForText(question)
+  });
 
   return {
     ok: true,
@@ -941,6 +1019,21 @@ function confirmationChoiceFromText(text: string): "yes" | "no" | null {
   return null;
 }
 
+function sourceDocumentChoiceFromText(text: string): "send" | "no" | null {
+  const normalized = normalizeMemoryText(text).trim();
+  if (
+    /^(?:source_document_send|send image|send photo|send picture|send document|send pdf|send source|image|photo|picture|document|pdf|manda imagen|mandar imagen|manda foto|mandar foto|manda documento|mandar documento|manda pdf|mandar pdf)$/i.test(
+      normalized
+    )
+  ) {
+    return "send";
+  }
+  if (/^(?:source_document_no|no|n|skip|not now|no gracias|no thanks)$/i.test(normalized)) {
+    return "no";
+  }
+  return null;
+}
+
 function needsMemoryClarification(text: string) {
   if (!isCredentialMemoryQuestion(text)) return false;
 
@@ -977,6 +1070,50 @@ async function askForDocumentLabel(documentId: string, to: string, language?: st
     to,
     body: documentLabelPrompt(promptLanguage),
     buttons: documentLabelButtons(promptLanguage)
+  });
+}
+
+async function offerSourceDocumentIfUseful(input: {
+  to: string;
+  documentId: string;
+  language: "en" | "es";
+}) {
+  const document = await getDecoderDocument(input.documentId);
+  if (!document) return;
+
+  await rememberPendingSourceDocument({
+    documentId: document.id,
+    userPhone: input.to
+  });
+  await sendButtonsIfConfigured({
+    to: input.to,
+    body: sourceDocumentPrompt(document, input.language),
+    buttons: sourceDocumentButtons(document, input.language)
+  });
+}
+
+async function sendSourceDocument(input: {
+  to: string;
+  document: DecoderDocumentDetail;
+  language: "en" | "es";
+}) {
+  const signedUrl = await createRawDocumentSignedUrl(input.document);
+  const caption = sourceDocumentCaption(input.document, input.language);
+
+  if (input.document.mime_type?.startsWith("image/")) {
+    await sendImageIfConfigured({
+      to: input.to,
+      imageUrl: signedUrl,
+      caption
+    });
+    return;
+  }
+
+  await sendDocumentIfConfigured({
+    to: input.to,
+    documentUrl: signedUrl,
+    filename: sourceDocumentFilename(input.document),
+    caption
   });
 }
 
@@ -1095,6 +1232,59 @@ function credentialLabelDeclinedMessage(language: "en" | "es") {
   return "Esta bien. No voy a guardar esa etiqueta de WiFi.";
 }
 
+function sourceDocumentPrompt(document: DecoderDocumentDetail, language: "en" | "es") {
+  const sourceName = sourceDocumentKind(document, language);
+  if (language === "en") {
+    return `Do you want me to send the original ${sourceName} I used?`;
+  }
+
+  return `Quieres que te mande ${sourceName} original que use?`;
+}
+
+function sourceDocumentButtons(document: DecoderDocumentDetail, language: "en" | "es") {
+  const sendTitle = sourceDocumentSendButtonTitle(document, language);
+  if (language === "en") {
+    return [
+      { id: "source_document_send", title: sendTitle },
+      { id: "source_document_no", title: "No" }
+    ];
+  }
+
+  return [
+    { id: "source_document_send", title: sendTitle },
+    { id: "source_document_no", title: "No" }
+  ];
+}
+
+function sourceDocumentSendButtonTitle(document: DecoderDocumentDetail, language: "en" | "es") {
+  if (document.mime_type?.startsWith("image/")) return language === "en" ? "Send image" : "Mandar imagen";
+  if (document.mime_type === "application/pdf") return language === "en" ? "Send PDF" : "Mandar PDF";
+  return language === "en" ? "Send file" : "Mandar archivo";
+}
+
+function sourceDocumentKind(document: DecoderDocumentDetail, language: "en" | "es") {
+  if (document.mime_type?.startsWith("image/")) return language === "en" ? "image" : "imagen";
+  if (document.mime_type === "application/pdf") return language === "en" ? "PDF" : "PDF";
+  return language === "en" ? "file" : "archivo";
+}
+
+function sourceDocumentCaption(document: DecoderDocumentDetail, language: "en" | "es") {
+  const label = documentSelectionLabel(document);
+  if (language === "en") return `Original source: ${label}`;
+  return `Fuente original: ${label}`;
+}
+
+function sourceDocumentDeclinedMessage(language: "en" | "es") {
+  if (language === "en") return "Okay. I will keep the original saved in memory.";
+  return "Esta bien. Voy a mantener el original guardado en memoria.";
+}
+
+function sourceDocumentFilename(document: DecoderDocumentDetail) {
+  const fallback = document.mime_type === "application/pdf" ? "source-document.pdf" : "source-document";
+  const fileName = document.storage_path.split("/").pop()?.trim();
+  return fileName || fallback;
+}
+
 function memoryLabelSavedMessage(label: string, language: "en" | "es") {
   if (language === "en") return `Got it. I saved that document as "${label}" for future searches.`;
   return `Listo. Guarde ese documento como "${label}" para buscarlo despues.`;
@@ -1120,9 +1310,9 @@ function languageForText(text: string): "en" | "es" {
   const normalized = text.toLowerCase();
   if (/[¿¡áéíóúñ]/i.test(text)) return "es";
 
-  const englishSignals = /\b(what|when|where|why|how|need|do|pay|amount|who|is|this)\b/i;
+  const englishSignals = /\b(what|when|where|why|how|need|do|pay|amount|who|is|this|yes|no|send|image|photo|picture|document|file|pdf)\b/i;
   const spanishSignals =
-    /\b(que|qué|cuando|cuándo|donde|dónde|porque|por qué|como|cómo|necesito|pagar|monto|quien|quién|es|esto)\b/i;
+    /\b(que|qué|cuando|cuándo|donde|dónde|porque|por qué|como|cómo|necesito|pagar|monto|quien|quién|es|esto|si|sí|mandar|manda|enviar|envia|imagen|foto|documento|archivo)\b/i;
 
   if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
   return "es";
@@ -1253,6 +1443,19 @@ async function sendImageIfConfigured(input: { to: string; imageUrl: string; capt
     return;
   }
   await sendWhatsAppImageLink(input);
+}
+
+async function sendDocumentIfConfigured(input: {
+  to: string;
+  documentUrl: string;
+  filename: string;
+  caption?: string;
+}) {
+  if (!env.whatsappAccessToken || !env.whatsappPhoneNumberId) {
+    console.log("WhatsApp document reply skipped because credentials are missing.");
+    return;
+  }
+  await sendWhatsAppDocumentLink(input);
 }
 
 async function sendButtonsIfConfigured(input: {

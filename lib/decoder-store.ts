@@ -25,6 +25,7 @@ const DOCUMENT_MEMORY_DISABLED_PREFIX = "whatsapp:document_memory_disabled:";
 const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
 const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
 const PENDING_CREDENTIAL_LABEL_PREFIX = "whatsapp:pending_credential_label:";
+const PENDING_SOURCE_DOCUMENT_PREFIX = "whatsapp:pending_source_document:";
 const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
 
 type CreateRawDocumentInput = {
@@ -693,6 +694,47 @@ export async function getLatestPendingCredentialLabel(userPhone: string) {
 }
 
 export async function resolvePendingCredentialLabel(id: string, answer = "resolved") {
+  const supabase = createSupabaseServiceClient();
+
+  const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function rememberPendingSourceDocument(input: {
+  documentId: string;
+  userPhone: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${PENDING_SOURCE_DOCUMENT_PREFIX}${input.documentId}`,
+    answer: "pending_source_document"
+  });
+}
+
+export async function getLatestPendingSourceDocument(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("id, document_id")
+    .eq("user_phone", userPhone)
+    .eq("answer", "pending_source_document")
+    .like("question", `${PENDING_SOURCE_DOCUMENT_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.document_id) return null;
+
+  return {
+    id: data.id as string,
+    documentId: data.document_id as string
+  };
+}
+
+export async function resolvePendingSourceDocument(id: string, answer = "resolved") {
   const supabase = createSupabaseServiceClient();
 
   const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
