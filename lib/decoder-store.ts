@@ -27,6 +27,7 @@ const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
 const PENDING_CREDENTIAL_LABEL_PREFIX = "whatsapp:pending_credential_label:";
 const PENDING_SOURCE_DOCUMENT_PREFIX = "whatsapp:pending_source_document:";
 const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
+const LAST_MEMORY_ANSWER_PREFIX = "whatsapp:last_memory_answer:";
 const TRUSTED_ANSWER_PRIMARY_PREFIX = "trusted_answer:primary:";
 
 type CreateRawDocumentInput = {
@@ -588,6 +589,41 @@ export async function rememberLastMemoryDocument(input: {
   });
 }
 
+export async function rememberLatestMemoryAnswerContext(input: {
+  documentId: string;
+  userPhone: string;
+  question: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${LAST_MEMORY_ANSWER_PREFIX}${input.question}`,
+    answer: "active"
+  });
+}
+
+export async function getLatestMemoryAnswerContext(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("document_id, question")
+    .eq("user_phone", userPhone)
+    .eq("answer", "active")
+    .like("question", `${LAST_MEMORY_ANSWER_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.document_id || !data?.question) return null;
+
+  return {
+    documentId: data.document_id as string,
+    question: (data.question as string).slice(LAST_MEMORY_ANSWER_PREFIX.length)
+  };
+}
+
 export async function getLatestMemoryDocumentReference(userPhone: string) {
   const supabase = createSupabaseServiceClient();
 
@@ -896,6 +932,7 @@ function isMemoryUseQuestion(question: MemoryQuestionRow) {
   if (text.startsWith(PENDING_CREDENTIAL_LABEL_PREFIX)) return false;
   if (text.startsWith(PENDING_SOURCE_DOCUMENT_PREFIX)) return false;
   if (text.startsWith(LAST_MEMORY_DOCUMENT_PREFIX)) return false;
+  if (text.startsWith(LAST_MEMORY_ANSWER_PREFIX)) return false;
   if (text.startsWith(TRUSTED_ANSWER_PRIMARY_PREFIX)) return false;
   return true;
 }

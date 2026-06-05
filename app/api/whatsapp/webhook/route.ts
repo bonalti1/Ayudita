@@ -11,6 +11,7 @@ import {
   getDecoderDocument,
   getLatestPendingCredentialLabel,
   getLatestMemoryDocumentReference,
+  getLatestMemoryAnswerContext,
   getLatestPendingDocumentLabel,
   getLatestPendingMemorySelection,
   getLatestPendingSensitiveQuestion,
@@ -21,6 +22,7 @@ import {
   markWhatsAppMessageProcessed,
   recordMemoryAnswer,
   recordSourceDocumentSent,
+  rememberLatestMemoryAnswerContext,
   rememberPendingMemorySearch,
   rememberDocumentAlias,
   rememberLastMemoryDocument,
@@ -29,6 +31,7 @@ import {
   rememberPendingMemorySelection,
   rememberPendingSensitiveQuestion,
   rememberPendingSourceDocument,
+  rememberTrustedAnswerPrimary,
   resolvePendingDocumentLabel,
   resolvePendingCredentialLabel,
   resolvePendingMemorySelection,
@@ -242,6 +245,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (memoryLabelResult) return memoryLabelResult;
+
+    const memoryCorrectionResult = await processTextMemoryCorrectionMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (memoryCorrectionResult) return memoryCorrectionResult;
 
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
@@ -502,6 +513,12 @@ async function processTextMemorySelectionMessage(input: {
     };
   }
 
+  await rememberTrustedAnswerPrimary({
+    documentId: document.id,
+    userPhone: input.from,
+    trustedAnswerId: "whatsapp_selection"
+  });
+
   return answerSelectedMemoryDocument({
     from: input.from,
     question: pending.question,
@@ -740,6 +757,108 @@ async function processTextMemoryLabelMessage(input: {
   };
 }
 
+async function processTextMemoryCorrectionMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const correction = memoryCorrectionFromText(input.text);
+  if (!correction) return null;
+
+  const language = languageForText(input.text);
+  const context = await getLatestMemoryAnswerContext(input.from);
+  const latestDocumentId = context?.documentId ?? (await getLatestMemoryDocumentReference(input.from));
+
+  if (!latestDocumentId) {
+    await sendTextIfConfigured(input.from, missingMemoryCorrectionContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_correction_missing_context"
+    };
+  }
+
+  if (correction.type === "use_current") {
+    await rememberTrustedAnswerPrimary({
+      documentId: latestDocumentId,
+      userPhone: input.from,
+      trustedAnswerId: "whatsapp_current"
+    });
+
+    if (correction.alias) {
+      await rememberDocumentAlias({
+        documentId: latestDocumentId,
+        userPhone: input.from,
+        alias: correction.alias
+      });
+    }
+
+    await sendTextIfConfigured(input.from, memoryCurrentProofConfirmedMessage(correction.alias, language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: latestDocumentId,
+      action: correction.alias ? "memory_current_proof_labeled" : "memory_current_proof_confirmed"
+    };
+  }
+
+  if (!context?.question) {
+    await sendTextIfConfigured(input.from, missingMemoryCorrectionContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: latestDocumentId,
+      action: "memory_correction_missing_question"
+    };
+  }
+
+  const documents = await findWhatsAppMemoryDocuments({
+    userPhone: input.from,
+    query: context.question,
+    limit: 3
+  });
+  const alternateDocuments = documents.filter((document) => document.id !== latestDocumentId);
+  const selectableDocuments = alternateDocuments.length ? alternateDocuments : documents;
+
+  if (!selectableDocuments.length || selectableDocuments.every((document) => document.id === latestDocumentId)) {
+    await sendTextIfConfigured(input.from, memoryCorrectionNoAlternatesMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: latestDocumentId,
+      action: "memory_correction_no_alternates"
+    };
+  }
+
+  await rememberPendingMemorySelection({
+    userPhone: input.from,
+    question: context.question,
+    documentIds: selectableDocuments.map((document) => document.id),
+    aliasToRemember: correction.alias
+  });
+  await sendMemoryPreviewImagesIfUseful({
+    to: input.from,
+    question: context.question,
+    documents: selectableDocuments
+  });
+  await sendButtonsIfConfigured({
+    to: input.from,
+    body: memoryCorrectionSelectionMessage(selectableDocuments, language),
+    buttons: memorySelectionButtons(selectableDocuments)
+  });
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: latestDocumentId,
+    action: "memory_correction_selection_requested"
+  };
+}
+
 async function processTextMemoryClarificationMessage(input: {
   from: string;
   text: string;
@@ -918,6 +1037,11 @@ async function answerMemoryQuestionDirectlyIfConfident(input: {
     documentId: document.id,
     userPhone: input.from
   });
+  await rememberLatestMemoryAnswerContext({
+    documentId: document.id,
+    userPhone: input.from,
+    question: input.question
+  });
 
   await sendTextIfConfigured(
     input.from,
@@ -1020,6 +1144,11 @@ async function answerSelectedMemoryDocument(input: {
   await rememberLastMemoryDocument({
     documentId: answer.document.id,
     userPhone: input.from
+  });
+  await rememberLatestMemoryAnswerContext({
+    documentId: answer.document.id,
+    userPhone: input.from,
+    question: input.question
   });
   await sendTextIfConfigured(input.from, answer.body);
 
@@ -1278,6 +1407,49 @@ function memoryLabelFromSaveCommand(text: string) {
   return cleaned;
 }
 
+function memoryCorrectionFromText(text: string):
+  | { type: "wrong"; alias?: string }
+  | { type: "use_current"; alias?: string }
+  | null {
+  const normalized = normalizeMemoryText(text).trim();
+  if (!normalized) return null;
+
+  const alias = memoryAliasFromCorrectionText(text);
+  if (
+    /\b(use this|use current|this one is right|this is right|correct one|keep this|make this main|set this as main|usa este|usa esta|usar este|usar esta|este es correcto|esta es correcta|este si|esta si|haz este principal|haz esta principal)\b/.test(
+      normalized
+    )
+  ) {
+    return { type: "use_current", alias: alias ?? undefined };
+  }
+
+  if (
+    /\b(wrong|incorrect|not that|not this|wrong one|use the other|other one|try another|choose another|switch proof|no es|incorrecto|incorrecta|equivocado|equivocada|ese no|esa no|usa el otro|usa la otra|otro|otra|cambia la prueba)\b/.test(
+      normalized
+    )
+  ) {
+    return { type: "wrong", alias: alias ?? undefined };
+  }
+
+  return null;
+}
+
+function memoryAliasFromCorrectionText(text: string) {
+  const match = text.trim().match(
+    /(?:as|como)\s+["']?([^"']{2,80})["']?\s*$/i
+  );
+  if (!match?.[1]) return null;
+
+  const alias = match[1]
+    .trim()
+    .replace(/[.!?¿¡]+$/g, "")
+    .replace(/\s+/g, " ");
+
+  if (isDoNotSaveMemoryLabel(alias)) return null;
+  if (alias.split(/\s+/).length > 8) return null;
+  return alias;
+}
+
 function isDoNotSaveMemoryLabel(label: string) {
   return /\b(dont save|don't save|do not save|skip|none|nada|no guardar|no save|no memory|sin memoria|not mine|not my|no es mio|no es mio|no mio|no es de mi|no es m[ií]o)\b/i.test(
     label
@@ -1510,6 +1682,19 @@ function memorySelectionMessage(documents: DecoderDocumentDetail[], language: "e
   return `Encontre varios documentos guardados que podrian ser:\n${options}\nResponde con 1, 2 o 3 para contestar del correcto.`;
 }
 
+function memoryCorrectionSelectionMessage(documents: DecoderDocumentDetail[], language: "en" | "es") {
+  const options = documents
+    .slice(0, 3)
+    .map((document, index) => `${index + 1}. ${documentSelectionLabel(document)}`)
+    .join("\n");
+
+  if (language === "en") {
+    return `Got it. I can switch the main proof. Which one should I use next time?\n${options}`;
+  }
+
+  return `Listo. Puedo cambiar la prueba principal. Cual debo usar la proxima vez?\n${options}`;
+}
+
 function memorySelectionButtons(documents: DecoderDocumentDetail[]) {
   return documents.slice(0, 3).map((_, index) => ({
     id: `memory_select_${index + 1}`,
@@ -1534,6 +1719,34 @@ function memoryPreviewCaption(index: number, document: DecoderDocumentDetail, la
 function memorySelectionInvalidMessage(language: "en" | "es") {
   if (language === "en") return "Choose one of the document numbers I listed: 1, 2, or 3.";
   return "Escoge uno de los numeros que te mande: 1, 2 o 3.";
+}
+
+function missingMemoryCorrectionContextMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Ask the memory question again first, then say \"wrong\" or \"use this one\" and I can correct it.";
+  }
+
+  return "Haz la pregunta de memoria otra vez primero, luego di \"esta mal\" o \"usa este\" y lo puedo corregir.";
+}
+
+function memoryCorrectionNoAlternatesMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "I do not see another saved proof for that yet. Send me the correct image or document, and I can remember it.";
+  }
+
+  return "Todavia no veo otra prueba guardada para eso. Mandame la imagen o documento correcto y lo puedo recordar.";
+}
+
+function memoryCurrentProofConfirmedMessage(alias: string | undefined, language: "en" | "es") {
+  if (language === "en") {
+    return alias
+      ? `Got it. I will use this proof as the main "${alias}" memory next time.`
+      : "Got it. I will use this proof as the main one next time.";
+  }
+
+  return alias
+    ? `Listo. Usare esta prueba como la memoria principal de "${alias}" la proxima vez.`
+    : "Listo. Usare esta prueba como la principal la proxima vez.";
 }
 
 function documentSelectionLabel(document: DecoderDocumentDetail) {
