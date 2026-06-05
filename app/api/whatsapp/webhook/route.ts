@@ -111,6 +111,7 @@ export async function POST(request: Request) {
       results.push(await processMessage(message));
     } catch (error) {
       console.error("WhatsApp message processing failed.", error);
+      await sendProcessingFailureIfPossible(message, error);
       results.push({
         ok: false,
         messageId: message.id ?? null,
@@ -1008,4 +1009,29 @@ async function sendButtonsIfConfigured(input: {
 function fallbackButtonText(body: string, buttons: Array<{ title: string }>) {
   const options = buttons.map((button) => `- ${button.title}`).join("\n");
   return `${body}\n\n${options}`;
+}
+
+async function sendProcessingFailureIfPossible(message: WhatsAppMessage, error: unknown) {
+  if (!message.from) return;
+
+  try {
+    await sendTextIfConfigured(message.from, processingFailureMessage(message, error));
+  } catch (sendError) {
+    console.error("Could not notify WhatsApp sender about processing failure.", sendError);
+  }
+}
+
+function processingFailureMessage(message: WhatsAppMessage, error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : "";
+  const mediaMessage = message.type === "image" || message.type === "document";
+
+  if (mediaMessage && /401|Authentication Error|OAuthException/i.test(errorMessage)) {
+    return "Recibi tu archivo, pero WhatsApp no me dejo descargarlo. Revisa el access token de WhatsApp en Render y vuelve a mandar la foto.";
+  }
+
+  if (mediaMessage) {
+    return "Recibi tu archivo, pero no pude procesarlo. Intenta mandarlo otra vez con buena luz o como PDF.";
+  }
+
+  return "Recibi tu mensaje, pero algo fallo procesandolo. Intenta otra vez en un minuto.";
 }
