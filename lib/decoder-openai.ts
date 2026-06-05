@@ -1,8 +1,14 @@
 import { createOpenAIClient } from "./openai";
 import { decoderExtractionJsonSchema, decoderExtractionSchema } from "./decoder-extraction-schema";
 import type { DecoderExtraction } from "./decoder-extraction-schema";
-import { EXPLAIN_MODEL, EXPLANATION_PROMPT, EXTRACT_MODEL, EXTRACTION_PROMPT } from "./decoder-prompts";
-import type { DecoderFact } from "./decoder-types";
+import {
+  EXPLAIN_MODEL,
+  EXPLANATION_PROMPT,
+  EXTRACT_MODEL,
+  EXTRACTION_PROMPT,
+  FOLLOW_UP_PROMPT
+} from "./decoder-prompts";
+import type { DecoderExplanation, DecoderFact } from "./decoder-types";
 
 type ExtractDocumentInput = {
   bytes: ArrayBuffer;
@@ -86,6 +92,51 @@ export async function explainFactsWithOpenAI(input: {
   const body = response.output_text?.trim();
   if (!body) {
     throw new Error("OpenAI returned an empty explanation response.");
+  }
+
+  return { body, model: EXPLAIN_MODEL };
+}
+
+export async function answerFollowUpWithOpenAI(input: {
+  question: string;
+  facts: DecoderFact[];
+  explanations: DecoderExplanation[];
+}): Promise<{ body: string; model: string }> {
+  const client = createOpenAIClient();
+
+  const response = await client.responses.create({
+    model: EXPLAIN_MODEL,
+    instructions: FOLLOW_UP_PROMPT,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              question: input.question,
+              facts: input.facts.map((fact) => ({
+                fact_type: fact.fact_type,
+                label: fact.label,
+                fact_value: fact.fact_value,
+                provenance_type: fact.provenance_type,
+                source_text: fact.source_text,
+                page_number: fact.page_number
+              })),
+              explanations: input.explanations.map((explanation) => ({
+                language: explanation.language,
+                body: explanation.body
+              }))
+            })
+          }
+        ]
+      }
+    ]
+  });
+
+  const body = response.output_text?.trim();
+  if (!body) {
+    throw new Error("OpenAI returned an empty follow-up response.");
   }
 
   return { body, model: EXPLAIN_MODEL };

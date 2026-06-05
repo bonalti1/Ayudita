@@ -8,7 +8,11 @@ import type {
   ReviewStatus
 } from "./decoder-types";
 import type { DecoderExtraction } from "./decoder-extraction-schema";
-import { explainFactsWithOpenAI, extractFactsWithOpenAI } from "./decoder-openai";
+import {
+  answerFollowUpWithOpenAI,
+  explainFactsWithOpenAI,
+  extractFactsWithOpenAI
+} from "./decoder-openai";
 import { sendWhatsAppText } from "./whatsapp";
 
 const RAW_DOCUMENTS_BUCKET = "raw-documents";
@@ -269,6 +273,47 @@ export async function sendReviewedExplanationToWhatsApp(
   return sentDocument;
 }
 
+export async function answerLatestWhatsAppDocumentQuestion(input: {
+  userPhone: string;
+  question: string;
+}) {
+  const documents = await listDecoderDocuments();
+  const latestDocument = documents.find(
+    (document) =>
+      document.source === "whatsapp" &&
+      document.user_phone === input.userPhone &&
+      (document.status === "extracted" || document.status === "explained")
+  );
+
+  if (!latestDocument) {
+    return null;
+  }
+
+  const document = await getDecoderDocument(latestDocument.id);
+  if (!document || !document.facts.length) {
+    return null;
+  }
+
+  const { body, model } = await answerFollowUpWithOpenAI({
+    question: input.question,
+    facts: document.facts,
+    explanations: document.explanations
+  });
+
+  await logUserQuestion({
+    documentId: document.id,
+    userPhone: input.userPhone,
+    question: input.question,
+    answer: body
+  });
+
+  return {
+    document,
+    body,
+    model
+  };
+}
+
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {
   if (action === "approve") return "reviewed";
   if (action === "reset") return "pending";
@@ -291,13 +336,27 @@ async function logClearerPhotoQuestion(document: DecoderDocumentDetail) {
 }
 
 async function logWhatsAppSend(document: DecoderDocumentDetail, body: string) {
+  await logUserQuestion({
+    documentId: document.id,
+    userPhone: document.user_phone,
+    question: "manual_review:sent_whatsapp",
+    answer: body
+  });
+}
+
+async function logUserQuestion(input: {
+  documentId: string;
+  userPhone: string;
+  question: string;
+  answer: string;
+}) {
   const supabase = createSupabaseServiceClient();
 
   const { error } = await supabase.from("user_questions").insert({
-    document_id: document.id,
-    user_phone: document.user_phone,
-    question: "manual_review:sent_whatsapp",
-    answer: body
+    document_id: input.documentId,
+    user_phone: input.userPhone,
+    question: input.question,
+    answer: input.answer
   });
 
   if (error) throw error;

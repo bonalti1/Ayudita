@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createRawDecoderDocument,
+  answerLatestWhatsAppDocumentQuestion,
   explainDecoderDocument,
   extractDecoderDocument,
   getDecoderDocument,
@@ -135,6 +136,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (unlockResult) return unlockResult;
+
+    const followUpResult = await processTextFollowUpMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (followUpResult) return followUpResult;
   }
 
   await sendTextIfConfigured(
@@ -271,6 +280,31 @@ async function processTextUnlockMessage(input: {
     messageId: input.messageId ?? null,
     documentId: pendingDocument.id,
     action: "sensitive_explanation_unlocked_and_sent"
+  };
+}
+
+async function processTextFollowUpMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const question = input.text.trim();
+  if (!question) return null;
+
+  const answer = await answerLatestWhatsAppDocumentQuestion({
+    userPhone: input.from,
+    question
+  });
+
+  if (!answer) return null;
+
+  await sendTextIfConfigured(input.from, answer.body);
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: answer.document.id,
+    action: "follow_up_answered"
   };
 }
 
