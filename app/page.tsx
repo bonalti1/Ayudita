@@ -73,6 +73,32 @@ type MemoryQueryResult = {
     source_text: string | null;
   } | null;
 };
+type TrustedAnswerGroup = {
+  id: string;
+  title: string;
+  answer_label: string;
+  answer_value: string | null;
+  answer_source_text: string | null;
+  confidence: "high" | "medium" | "low";
+  aliases: string[];
+  source_count: number;
+  source_sent_count: number;
+  memory_use_count: number;
+  last_used_at: string | null;
+  main_document_id: string;
+  main_source_title: string;
+  proof_type: "image" | "pdf" | "document";
+  sources: Array<{
+    document_id: string;
+    title: string;
+    created_at: string;
+    mime_type: string | null;
+    source: string;
+    source_sent_count: number;
+    memory_use_count: number;
+    is_main: boolean;
+  }>;
+};
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -84,6 +110,7 @@ function Icon({ children }: { children: React.ReactNode }) {
 
 export default function Home() {
   const [documents, setDocuments] = useState<DecoderDocumentSummary[]>([]);
+  const [trustedAnswers, setTrustedAnswers] = useState<TrustedAnswerGroup[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<DecoderDocumentDetail | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -99,11 +126,13 @@ export default function Home() {
   const [isAskingMemory, setIsAskingMemory] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTrustedAnswersLoading, setIsTrustedAnswersLoading] = useState(true);
   const isSpanish = uiLanguage === "es";
   const ui = (english: string, spanish: string) => (isSpanish ? spanish : english);
 
   useEffect(() => {
     refreshDocuments();
+    refreshTrustedAnswers();
   }, []);
 
   useEffect(() => {
@@ -130,6 +159,18 @@ export default function Home() {
       }
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function refreshTrustedAnswers() {
+    setIsTrustedAnswersLoading(true);
+    try {
+      const response = await fetch("/api/trusted-answers");
+      if (!response.ok) return;
+      const data = (await response.json()) as { trusted_answers: TrustedAnswerGroup[] };
+      setTrustedAnswers(data.trusted_answers);
+    } finally {
+      setIsTrustedAnswersLoading(false);
     }
   }
 
@@ -170,6 +211,7 @@ export default function Home() {
       setUnlockStatus(ui("Sensitive information unlocked.", "Información sensible desbloqueada."));
       await loadDocument(selectedId);
       await refreshDocuments(selectedId);
+      await refreshTrustedAnswers();
     } catch {
       setUnlockStatus(ui("Could not unlock.", "No se pudo desbloquear."));
     } finally {
@@ -205,6 +247,7 @@ export default function Home() {
       const data = (await response.json()) as { document: DecoderDocumentSummary };
       setUploadStatus(ui("Source saved. Ayudita can remember it now.", "Fuente guardada. Ayudita ya la puede recordar."));
       await refreshDocuments(data.document.id);
+      await refreshTrustedAnswers();
     } catch {
       setUploadStatus(ui("Could not upload the document.", "No se pudo subir el documento."));
     } finally {
@@ -247,14 +290,14 @@ export default function Home() {
   const memoryDocuments = useMemo(() => {
     return documents.filter(
       (document) =>
-        Boolean(document.memory_aliases?.length) ||
+        hasUsefulMemoryAlias(document) ||
         Boolean(document.has_credential_facts) ||
         Boolean(document.memory_disabled)
     );
   }, [documents]);
 
   const recentDocuments = documents.slice(0, 5);
-  const rememberedDocuments = memoryDocuments.slice(0, 4);
+  const topTrustedAnswers = trustedAnswers.slice(0, 4);
   const disabledMemoryCount = documents.filter((document) => document.memory_disabled).length;
   const sourceUseCount = documents.reduce((total, document) => total + (document.source_request_count ?? 0), 0);
 
@@ -265,7 +308,7 @@ export default function Home() {
 
     return viewDocuments.filter((document) => {
       if (filter === "all") return true;
-      if (filter === "memory") return Boolean(document.memory_aliases?.length) && !document.memory_disabled;
+      if (filter === "memory") return hasUsefulMemoryAlias(document) && !document.memory_disabled;
       if (filter === "credentials") return Boolean(document.has_credential_facts);
       if (filter === "whatsapp") return document.source === "whatsapp";
       if (filter === "disabled") return Boolean(document.memory_disabled);
@@ -274,7 +317,7 @@ export default function Home() {
   }, [activeView, documents, filter, memoryDocuments]);
 
   const explainedCount = documents.filter((document) => document.status === "explained").length;
-  const memoryCount = documents.filter((document) => document.memory_aliases?.length).length;
+  const memoryCount = trustedAnswers.length;
   const credentialCount = documents.filter((document) => document.has_credential_facts).length;
 
   const viewTitle =
@@ -466,7 +509,7 @@ export default function Home() {
             </div>
             <div>
               <strong>{memoryCount}</strong>
-              <span>{ui("memories", "memorias")}</span>
+              <span>{ui("trusted answers", "respuestas confiables")}</span>
             </div>
             <div>
               <strong>{explainedCount}</strong>
@@ -474,7 +517,7 @@ export default function Home() {
             </div>
             <div>
               <strong>{sourceUseCount}</strong>
-              <span>{ui("source requests", "fuentes pedidas")}</span>
+              <span>{ui("proof sends", "pruebas enviadas")}</span>
             </div>
             <div>
               <strong>{credentialCount}</strong>
@@ -491,46 +534,36 @@ export default function Home() {
                       <h2>{ui("What Ayudita Remembers", "Qué recuerda Ayudita")}</h2>
                       <p>
                         {ui(
-                          "The most useful saved memories and credential sources.",
-                          "Las memorias guardadas y fuentes credenciales más útiles."
+                          "Customer-ready answers with proof, grouped from saved sources.",
+                          "Respuestas listas para el cliente con prueba, agrupadas desde fuentes guardadas."
                         )}
                       </p>
                     </div>
-                    <span className="status ready">{ui(`${memoryDocuments.length} memories`, `${memoryDocuments.length} memorias`)}</span>
+                    <span className="status ready">{ui(`${trustedAnswers.length} trusted answers`, `${trustedAnswers.length} respuestas confiables`)}</span>
                   </div>
-                  <div className="priority-list">
-                    {isLoading ? <div className="empty-state">{ui("Loading documents...", "Cargando documentos...")}</div> : null}
-                    {!isLoading && rememberedDocuments.length === 0 ? (
+                  <div className="trusted-answer-list">
+                    {isTrustedAnswersLoading ? <div className="empty-state">{ui("Loading trusted answers...", "Cargando respuestas confiables...")}</div> : null}
+                    {!isTrustedAnswersLoading && topTrustedAnswers.length === 0 ? (
                       <div className="empty-state">
-                        <strong>{ui("No memories saved yet.", "Aún no hay memorias guardadas.")}</strong>
+                        <strong>{ui("No trusted answers yet.", "Aún no hay respuestas confiables.")}</strong>
                         <span>
                           {ui(
-                            "Upload a source or answer a question so Ayudita can build useful memory.",
-                            "Sube una fuente o responde una pregunta para que Ayudita construya memoria útil."
+                            "Upload a source or ask a question so Ayudita can turn documents into reusable answers.",
+                            "Sube una fuente o haz una pregunta para que Ayudita convierta documentos en respuestas reutilizables."
                           )}
                         </span>
                       </div>
                     ) : null}
-                    {rememberedDocuments.map((document) => (
-                      <button
-                        key={document.id}
-                        className="priority-item"
-                        onClick={() => {
+                    {topTrustedAnswers.map((answer) => (
+                      <TrustedAnswerCard
+                        key={answer.id}
+                        answer={answer}
+                        language={uiLanguage}
+                        onOpenSource={(documentId) => {
                           setActiveView("memory");
-                          setSelectedId(document.id);
+                          setSelectedId(documentId);
                         }}
-                      >
-                        <div className={`memory-icon ${statusTone(document.status, document.review_status)}`}>
-                          <Icon>{iconPaths.doc}</Icon>
-                        </div>
-                        <div>
-                          <strong>{documentTitle(document, uiLanguage)}</strong>
-                          <span>{documentMeta(document, uiLanguage)}</span>
-                        </div>
-                        <span className={`status ${statusClass(document.status, document.review_status)}`}>
-                          {statusLabel(document.status, document.review_status, uiLanguage)}
-                        </span>
-                      </button>
+                      />
                     ))}
                   </div>
                 </section>
@@ -598,11 +631,11 @@ export default function Home() {
                     </div>
                     <div>
                       <strong>{sourceUseCount}</strong>
-                      <span>{ui("proof requests", "pedidos de prueba")}</span>
+                      <span>{ui("proof sends", "pruebas enviadas")}</span>
                     </div>
                     <div>
                       <strong>{memoryCount}</strong>
-                      <span>{ui("searchable memories", "memorias buscables")}</span>
+                      <span>{ui("trusted answers", "respuestas confiables")}</span>
                     </div>
                     <div>
                       <strong>{disabledMemoryCount}</strong>
@@ -933,6 +966,86 @@ function InfoField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function TrustedAnswerCard({
+  answer,
+  language,
+  onOpenSource
+}: {
+  answer: TrustedAnswerGroup;
+  language: UiLanguage;
+  onOpenSource: (documentId: string) => void;
+}) {
+  const isSpanish = language === "es";
+  const proofLabel =
+    answer.proof_type === "image"
+      ? isSpanish ? "imagen" : "image"
+      : answer.proof_type === "pdf"
+        ? "PDF"
+        : isSpanish ? "documento" : "document";
+  const sourceCountLabel = isSpanish
+    ? `${answer.source_count} ${answer.source_count === 1 ? "fuente de prueba" : "fuentes de prueba"}`
+    : `${answer.source_count} ${answer.source_count === 1 ? "proof source" : "proof sources"}`;
+  const sourceSentLabel = isSpanish
+    ? `${answer.source_sent_count} ${answer.source_sent_count === 1 ? "vez enviada" : "veces enviada"}`
+    : `${answer.source_sent_count} ${answer.source_sent_count === 1 ? "source send" : "source sends"}`;
+
+  return (
+    <article className="trusted-answer-card">
+      <div className="trusted-answer-main">
+        <div className="memory-icon green">
+          <Icon>{iconPaths.shield}</Icon>
+        </div>
+        <div>
+          <div className="trusted-answer-title-row">
+            <h3>{answer.title}</h3>
+            <span className={`status ${answer.confidence === "low" ? "processing" : "ready"}`}>
+              {answer.confidence === "high"
+                ? isSpanish ? "Alta confianza" : "High confidence"
+                : answer.confidence === "medium"
+                  ? isSpanish ? "Confianza media" : "Medium confidence"
+                  : isSpanish ? "Baja confianza" : "Low confidence"}
+            </span>
+          </div>
+          <p>
+            <strong>{answer.answer_label}</strong>
+            {": "}
+            {answer.answer_value ?? (isSpanish ? "Guardado con prueba" : "Saved with proof")}
+          </p>
+          <div className="trusted-answer-meta">
+            <span>{sourceCountLabel}</span>
+            <span>
+              {isSpanish
+                ? `Principal: ${answer.main_source_title}`
+                : `Main: ${answer.main_source_title}`}
+            </span>
+            <span>{sourceSentLabel}</span>
+          </div>
+        </div>
+      </div>
+      {answer.sources.length > 1 ? (
+        <div className="proof-source-strip">
+          {answer.sources.slice(0, 3).map((source) => (
+            <button key={source.document_id} onClick={() => onOpenSource(source.document_id)}>
+              {source.is_main ? (isSpanish ? "Principal" : "Main") : (isSpanish ? "Respaldo" : "Backup")}
+              <span>{shortDate(source.created_at, language)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="trusted-answer-actions">
+        <span>
+          {isSpanish
+            ? `Prueba: ${proofLabel}. Último uso: ${answer.last_used_at ? shortDate(answer.last_used_at, language) : "aún no usado"}`
+            : `Proof: ${proofLabel}. Last used: ${answer.last_used_at ? shortDate(answer.last_used_at, language) : "not used yet"}`}
+        </span>
+        <button className="small-button" onClick={() => onOpenSource(answer.main_document_id)}>
+          {isSpanish ? "Abrir prueba" : "Open proof"}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function MemoryAnswerCard({
   result,
   language,
@@ -1019,8 +1132,8 @@ function SourcePreview({
 
   if (document.source_url && isImage) {
     return (
-      <figure className="source-preview">
-        <img src={document.source_url} alt={title} />
+      <figure className="source-preview" key={document.id}>
+        <img key={document.source_url} src={document.source_url} alt={title} />
         <figcaption>
           {isSpanish ? "Imagen original guardada" : "Saved original image"}
         </figcaption>
@@ -1106,8 +1219,9 @@ function MemoryBadges({
   language: UiLanguage;
 }) {
   const badges: string[] = [];
+  const aliases = usefulMemoryAliases(document.memory_aliases);
 
-  if (document.memory_aliases?.length) badges.push(...document.memory_aliases.slice(0, 2));
+  if (aliases.length) badges.push(...aliases.slice(0, 2));
   if (document.has_credential_facts) badges.push(language === "es" ? "credencial" : "credential");
   if (document.memory_disabled) badges.push(language === "es" ? "no buscar" : "do not search");
   if (!badges.length) return null;
@@ -1123,6 +1237,7 @@ function MemoryBadges({
 
 function memoryHint(document: DecoderDocumentDetail, language: UiLanguage) {
   const isSpanish = language === "es";
+  const aliases = usefulMemoryAliases(document.memory_aliases);
 
   if (document.memory_disabled) {
     return isSpanish
@@ -1130,16 +1245,16 @@ function memoryHint(document: DecoderDocumentDetail, language: UiLanguage) {
       : "This document is saved, but Ayudita will not use it in memory searches.";
   }
 
-  if (document.memory_aliases?.length && document.has_credential_facts) {
+  if (aliases.length && document.has_credential_facts) {
     return isSpanish
-      ? `Ayudita puede contestar preguntas de credenciales usando: ${document.memory_aliases.join(", ")}.`
-      : `Ayudita can answer credential questions using: ${document.memory_aliases.join(", ")}.`;
+      ? `Ayudita puede contestar preguntas de credenciales usando: ${aliases.join(", ")}.`
+      : `Ayudita can answer credential questions using: ${aliases.join(", ")}.`;
   }
 
-  if (document.memory_aliases?.length) {
+  if (aliases.length) {
     return isSpanish
-      ? `Ayudita puede encontrar este documento por: ${document.memory_aliases.join(", ")}.`
-      : `Ayudita can find this document by: ${document.memory_aliases.join(", ")}.`;
+      ? `Ayudita puede encontrar este documento por: ${aliases.join(", ")}.`
+      : `Ayudita can find this document by: ${aliases.join(", ")}.`;
   }
 
   if (document.has_credential_facts) {
@@ -1151,6 +1266,29 @@ function memoryHint(document: DecoderDocumentDetail, language: UiLanguage) {
   return isSpanish
     ? "Este documento puede responder preguntas si coincide por tipo, fecha, texto guardado o contexto."
     : "This document can answer questions when type, date, saved text, or context matches.";
+}
+
+function hasUsefulMemoryAlias(document: Pick<DecoderDocumentSummary, "memory_aliases">) {
+  return usefulMemoryAliases(document.memory_aliases).length > 0;
+}
+
+function usefulMemoryAliases(aliases?: string[]) {
+  return (aliases ?? []).filter(isUsefulMemoryAlias);
+}
+
+function isUsefulMemoryAlias(value: string) {
+  const normalized = value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_-]+/g, " ")
+    .trim();
+
+  if (!normalized) return false;
+  if (["yes", "no", "ok", "okay", "thanks", "thank you", "mine", "me", "my"].includes(normalized)) {
+    return false;
+  }
+  return normalized.length >= 4;
 }
 
 function documentTitle(
