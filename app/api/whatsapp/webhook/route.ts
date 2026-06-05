@@ -8,6 +8,7 @@ import {
   extractDecoderDocument,
   findWhatsAppMemoryDocuments,
   getDecoderDocument,
+  getLatestMemoryDocumentReference,
   getLatestPendingDocumentLabel,
   getLatestPendingMemorySelection,
   getLatestPendingSensitiveQuestion,
@@ -17,6 +18,7 @@ import {
   markWhatsAppMessageProcessed,
   rememberPendingMemorySearch,
   rememberDocumentAlias,
+  rememberLastMemoryDocument,
   rememberPendingDocumentLabel,
   rememberPendingMemorySelection,
   rememberPendingSensitiveQuestion,
@@ -204,6 +206,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (documentLabelResult) return documentLabelResult;
+
+    const memoryLabelResult = await processTextMemoryLabelMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (memoryLabelResult) return memoryLabelResult;
 
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
@@ -400,6 +410,10 @@ async function processTextUnlockMessage(input: {
 
     if (answer) {
       await sendTextIfConfigured(input.from, answer.body);
+      await rememberLastMemoryDocument({
+        documentId: pendingDocument.id,
+        userPhone: input.from
+      });
       await askForDocumentLabel(pendingDocument.id, input.from, pendingDocument.language);
 
       return {
@@ -515,6 +529,40 @@ async function processTextDocumentLabelMessage(input: {
     messageId: input.messageId ?? null,
     documentId: pending.documentId,
     action: "document_label_saved"
+  };
+}
+
+async function processTextMemoryLabelMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const label = memoryLabelFromSaveCommand(input.text);
+  if (!label) return null;
+
+  const documentId = await getLatestMemoryDocumentReference(input.from);
+  if (!documentId) {
+    await sendTextIfConfigured(input.from, missingMemoryLabelTargetMessage(languageForText(input.text)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_label_missing_target"
+    };
+  }
+
+  await rememberDocumentAlias({
+    documentId,
+    userPhone: input.from,
+    alias: label
+  });
+  await sendTextIfConfigured(input.from, memoryLabelSavedMessage(label, languageForText(input.text)));
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId,
+    action: "memory_label_saved"
   };
 }
 
@@ -679,6 +727,10 @@ async function answerSelectedMemoryDocument(input: {
     });
   }
 
+  await rememberLastMemoryDocument({
+    documentId: answer.document.id,
+    userPhone: input.from
+  });
   await sendTextIfConfigured(input.from, answer.body);
 
   return {
@@ -812,6 +864,27 @@ function documentLabelFromText(text: string) {
   return cleaned;
 }
 
+function memoryLabelFromSaveCommand(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(
+    /^(?:(?:ok|okay|listo|va|ya esta|ya esta bien)[,\s]+)?(?:i\s+)?(?:just\s+)?(?:saved?|labeled?|label|remember(?:ed)?|name(?:d)?|guarda(?:r|do|lo|la)?|guardalo|guárdalo|etiqueta(?:r|do|lo|la)?|etiquetalo|etiquétalo|recuerda(?:r|lo|la)?|recuérdalo)\s+(?:this|that|it|document|doc|one|answer|esto|este|esta|documento|respuesta|eso)?\s*(?:as|como)\s+(.+)$/i
+  );
+  if (!match?.[1]) return null;
+
+  const cleaned = match[1]
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/^(?:my|mi|mine|mio|mía|mia)\s+/i, "")
+    .replace(/\s+/g, " ");
+
+  if (isDoNotSaveMemoryLabel(cleaned)) return null;
+  if (cleaned.length > 80) return null;
+  if (cleaned.split(/\s+/).length > 8) return null;
+  return cleaned;
+}
+
 function isDoNotSaveMemoryLabel(label: string) {
   return /\b(dont save|don't save|do not save|skip|none|nada|no guardar|no save|no memory|sin memoria|not mine|not my|no es mio|no es mio|no mio|no es de mi|no es m[ií]o)\b/i.test(
     label
@@ -861,6 +934,19 @@ function documentLabelButtons(language: "en" | "es") {
 function labelSavedMessage(label: string, language: "en" | "es") {
   if (language === "en") return `Got it. I labeled this document as "${label}" for future searches.`;
   return `Listo. Etiquete este documento como "${label}" para buscarlo despues.`;
+}
+
+function memoryLabelSavedMessage(label: string, language: "en" | "es") {
+  if (language === "en") return `Got it. I saved that document as "${label}" for future searches.`;
+  return `Listo. Guarde ese documento como "${label}" para buscarlo despues.`;
+}
+
+function missingMemoryLabelTargetMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Tell me which saved document you mean first, then I can label it for future searches.";
+  }
+
+  return "Primero dime cual documento guardado quieres usar, y luego puedo etiquetarlo para futuras busquedas.";
 }
 
 function labelSkippedMessage(language: "en" | "es") {

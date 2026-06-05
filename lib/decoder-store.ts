@@ -24,6 +24,7 @@ const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
 const DOCUMENT_MEMORY_DISABLED_PREFIX = "whatsapp:document_memory_disabled:";
 const PENDING_DOCUMENT_LABEL_PREFIX = "whatsapp:pending_document_label:";
 const PENDING_MEMORY_SELECTION_PREFIX = "whatsapp:pending_memory_selection:";
+const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -499,6 +500,35 @@ export async function rememberDocumentAlias(input: {
     question: `${DOCUMENT_ALIAS_PREFIX}${alias}`,
     answer: "saved"
   });
+}
+
+export async function rememberLastMemoryDocument(input: {
+  documentId: string;
+  userPhone: string;
+}) {
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${LAST_MEMORY_DOCUMENT_PREFIX}${input.documentId}`,
+    answer: "active"
+  });
+}
+
+export async function getLatestMemoryDocumentReference(userPhone: string) {
+  const supabase = createSupabaseServiceClient();
+
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("document_id")
+    .eq("user_phone", userPhone)
+    .eq("answer", "active")
+    .like("question", `${LAST_MEMORY_DOCUMENT_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return typeof data?.document_id === "string" ? data.document_id : null;
 }
 
 export async function disableDocumentMemory(input: {
