@@ -304,6 +304,33 @@ svg {
   box-shadow: var(--shadow);
 }
 
+.ask-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ask-card-head h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.ask-card-head p {
+  max-width: 720px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.memory-ask-card {
+  display: grid;
+  gap: 12px;
+}
+
 .ask-box {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -364,6 +391,70 @@ svg {
 .ask-actions span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.memory-answer {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(18, 135, 90, 0.18);
+  border-radius: var(--radius);
+  background: var(--green-soft);
+}
+
+.memory-answer.empty {
+  border-color: rgba(217, 54, 54, 0.18);
+  background: var(--red-soft);
+}
+
+.memory-answer-head,
+.answer-source {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.memory-answer p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.duplicate-note {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.answer-fact,
+.answer-source {
+  padding: 10px;
+  border: 1px solid rgba(18, 135, 90, 0.18);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.answer-fact {
+  display: grid;
+  gap: 4px;
+}
+
+.answer-fact span,
+.answer-source span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.answer-fact strong,
+.answer-source strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .upload-card {
@@ -904,6 +995,73 @@ svg {
 .memory-command .field:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+.memory-record {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid rgba(18, 135, 90, 0.18);
+  border-radius: var(--radius);
+  background: var(--green-soft);
+}
+
+.memory-record-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.memory-record-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.memory-record-head p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.memory-record-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-record-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(18, 135, 90, 0.15);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.memory-record-row span,
+.memory-record-footer span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.memory-record-row strong,
+.memory-record-footer strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.memory-record-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(18, 135, 90, 0.18);
 }
 
 .field {

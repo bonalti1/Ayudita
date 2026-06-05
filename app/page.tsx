@@ -51,6 +51,28 @@ const iconPaths = {
 type Filter = "all" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
 type UiLanguage = "en" | "es";
 type ActiveView = "command" | "memory" | "documents";
+type MemoryQueryResult = {
+  answer: string | null;
+  confidence: "high" | "medium" | "low" | "none";
+  duplicate_source_count?: number;
+  message?: string;
+  document?: {
+    id: string;
+    title: string;
+    source: string;
+    mime_type: string | null;
+    created_at: string;
+    memory_aliases: string[];
+    has_sensitive_info?: boolean;
+    sensitive_info_locked?: boolean;
+  };
+  fact?: {
+    label: string | null;
+    fact_type: string;
+    fact_value: string | null;
+    source_text: string | null;
+  } | null;
+};
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -67,10 +89,14 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("all");
   const [activeView, setActiveView] = useState<ActiveView>("command");
   const [uploadStatus, setUploadStatus] = useState("");
+  const [memoryQuestion, setMemoryQuestion] = useState("What is my office WiFi password?");
+  const [memoryAnswer, setMemoryAnswer] = useState<MemoryQueryResult | null>(null);
+  const [memoryAskStatus, setMemoryAskStatus] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("en");
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockStatus, setUnlockStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isAskingMemory, setIsAskingMemory] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const isSpanish = uiLanguage === "es";
@@ -183,6 +209,38 @@ export default function Home() {
       setUploadStatus(ui("Could not upload the document.", "No se pudo subir el documento."));
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  async function askMemory(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = memoryQuestion.trim();
+    if (!question) return;
+
+    setIsAskingMemory(true);
+    setMemoryAskStatus(ui("Searching saved memory...", "Buscando en memoria guardada..."));
+    setMemoryAnswer(null);
+
+    try {
+      const response = await fetch("/api/memory-query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+
+      const data = (await response.json().catch(() => null)) as MemoryQueryResult & { error?: string } | null;
+
+      if (!response.ok) {
+        setMemoryAskStatus(data?.error ?? ui("Could not search memory.", "No se pudo buscar en memoria."));
+        return;
+      }
+
+      setMemoryAnswer(data);
+      setMemoryAskStatus("");
+    } catch {
+      setMemoryAskStatus(ui("Could not search memory.", "No se pudo buscar en memoria."));
+    } finally {
+      setIsAskingMemory(false);
     }
   }
 
@@ -351,6 +409,54 @@ export default function Home() {
               />
             </label>
             {uploadStatus ? <span className="upload-status">{uploadStatus}</span> : null}
+          </section>
+
+          <section className="ask-card memory-ask-card" aria-label={ui("Ask Ayudita memory", "Preguntar a memoria de Ayudita")}>
+            <div className="ask-card-head">
+              <div>
+                <h2>{ui("Ask Ayudita Memory", "Preguntar a memoria de Ayudita")}</h2>
+                <p>
+                  {ui(
+                    "Test the real experience: answer from memory first, then open the proof source.",
+                    "Prueba la experiencia real: contestar desde memoria primero y luego abrir la fuente de prueba."
+                  )}
+                </p>
+              </div>
+              <span className="status ready">{ui("Proof-backed", "Con prueba")}</span>
+            </div>
+            <form className="ask-box" onSubmit={askMemory}>
+              <Icon>{iconPaths.shield}</Icon>
+              <input
+                value={memoryQuestion}
+                onChange={(event) => setMemoryQuestion(event.target.value)}
+                placeholder={ui("Ask about a saved memory...", "Pregunta sobre una memoria guardada...")}
+              />
+              <button className="primary" type="submit" disabled={isAskingMemory || !memoryQuestion.trim()}>
+                {isAskingMemory ? ui("Searching...", "Buscando...") : ui("Ask", "Preguntar")}
+              </button>
+            </form>
+            <div className="chips" aria-label={ui("Example questions", "Preguntas ejemplo")}>
+              {[
+                ui("What is my office WiFi password?", "Cuál es mi password de WiFi de oficina?"),
+                ui("Show me the proof source", "Muéstrame la fuente de prueba"),
+                ui("What toll bill do I owe?", "Qué toll bill debo?")
+              ].map((question) => (
+                <button className="chip" key={question} onClick={() => setMemoryQuestion(question)}>
+                  {question}
+                </button>
+              ))}
+            </div>
+            {memoryAskStatus ? <p className="inline-status">{memoryAskStatus}</p> : null}
+            {memoryAnswer ? (
+              <MemoryAnswerCard
+                result={memoryAnswer}
+                language={uiLanguage}
+                onOpenSource={(documentId) => {
+                  setActiveView("memory");
+                  setSelectedId(documentId);
+                }}
+              />
+            ) : null}
           </section>
 
           <section className="metric-strip" aria-label={ui("Decoder status", "Estado del decoder")}>
@@ -719,12 +825,21 @@ export default function Home() {
                             value={String(selectedDocument.memory_use_count ?? 0)}
                           />
                           <InfoField
+                            label={ui("Last used", "Último uso")}
+                            value={
+                              selectedDocument.memory_last_used_at
+                                ? shortDate(selectedDocument.memory_last_used_at, uiLanguage)
+                                : ui("Not used yet", "Aún no usado")
+                            }
+                          />
+                          <InfoField
                             label={ui("Source sent", "Fuente enviada")}
                             value={String(selectedDocument.source_request_count ?? 0)}
                           />
                         </div>
                         <p className="memory-hint">{memoryHint(selectedDocument, uiLanguage)}</p>
                       </section>
+                      <MemoryFactSummary document={selectedDocument} language={uiLanguage} />
                       <button className="secondary refresh-source" onClick={() => refreshDocuments(selectedDocument.id)}>
                         {ui("Refresh source", "Actualizar fuente")}
                       </button>
@@ -818,6 +933,62 @@ function InfoField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MemoryAnswerCard({
+  result,
+  language,
+  onOpenSource
+}: {
+  result: MemoryQueryResult;
+  language: UiLanguage;
+  onOpenSource: (documentId: string) => void;
+}) {
+  const isSpanish = language === "es";
+  const hasAnswer = Boolean(result.answer);
+  const confidenceLabel =
+    result.confidence === "high"
+      ? isSpanish ? "Alta confianza" : "High confidence"
+      : result.confidence === "medium"
+        ? isSpanish ? "Confianza media" : "Medium confidence"
+        : result.confidence === "low"
+          ? isSpanish ? "Baja confianza" : "Low confidence"
+          : isSpanish ? "Sin match claro" : "No clear match";
+
+  return (
+    <div className={`memory-answer ${hasAnswer ? "" : "empty"}`}>
+      <div className="memory-answer-head">
+        <span className={`status ${result.confidence === "none" ? "review" : "ready"}`}>
+          {confidenceLabel}
+        </span>
+        {result.duplicate_source_count && result.duplicate_source_count > 1 ? (
+          <span className="duplicate-note">
+            {isSpanish
+              ? `${result.duplicate_source_count} fuentes dicen lo mismo`
+              : `${result.duplicate_source_count} sources say the same thing`}
+          </span>
+        ) : null}
+      </div>
+      <p>{result.answer ?? result.message}</p>
+      {result.fact ? (
+        <div className="answer-fact">
+          <span>{result.fact.label ?? result.fact.fact_type}</span>
+          <strong>{result.fact.fact_value ?? (isSpanish ? "Guardado" : "Saved")}</strong>
+        </div>
+      ) : null}
+      {result.document ? (
+        <div className="answer-source">
+          <div>
+            <span>{isSpanish ? "Fuente" : "Source"}</span>
+            <strong>{result.document.title}</strong>
+          </div>
+          <button className="small-button" onClick={() => onOpenSource(result.document!.id)}>
+            {isSpanish ? "Abrir prueba" : "Open proof"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SourcePreview({
   document,
   language
@@ -878,6 +1049,52 @@ function SourcePreview({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function MemoryFactSummary({
+  document,
+  language
+}: {
+  document: DecoderDocumentDetail;
+  language: UiLanguage;
+}) {
+  const isSpanish = language === "es";
+  const primaryFacts = document.facts
+    .filter((fact) => fact.fact_value)
+    .sort((a, b) => factImportance(b) - factImportance(a))
+    .slice(0, 4);
+
+  if (!primaryFacts.length) return null;
+
+  return (
+    <section className="memory-record">
+      <div className="memory-record-head">
+        <div>
+          <h3>{isSpanish ? "Registro de memoria" : "Memory Record"}</h3>
+          <p>
+            {isSpanish
+              ? "Lo que Ayudita puede contestar desde esta fuente."
+              : "What Ayudita can answer from this source."}
+          </p>
+        </div>
+        <span className="status ready">{isSpanish ? "Con prueba" : "Proof ready"}</span>
+      </div>
+      <div className="memory-record-grid">
+        {primaryFacts.map((fact) => (
+          <div className="memory-record-row" key={fact.id}>
+            <span>{fact.label ?? fact.fact_type}</span>
+            <strong>{fact.fact_value}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="memory-record-footer">
+        <span>{isSpanish ? "Fuente" : "Source"}</span>
+        <strong>{documentTitle(document, language)}</strong>
+        <span>{isSpanish ? "Prueba" : "Proof"}</span>
+        <strong>{document.mime_type?.startsWith("image/") ? (isSpanish ? "Imagen original" : "Original image") : (isSpanish ? "Documento original" : "Original document")}</strong>
+      </div>
+    </section>
   );
 }
 
@@ -970,6 +1187,23 @@ function documentMeta(
   return `${sourceLabel(document.source)} · ${document.mime_type ?? (language === "es" ? "archivo" : "file")} · ${date} · ${
     document.facts_count ?? document.facts?.length ?? 0
   } facts`;
+}
+
+function shortDate(date: string, language: UiLanguage) {
+  return new Intl.DateTimeFormat(language === "es" ? "es-US" : "en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(date));
+}
+
+function factImportance(fact: { fact_type: string; label: string | null }) {
+  const text = `${fact.fact_type} ${fact.label ?? ""}`.toLowerCase();
+  if (text.includes("password") || text.includes("credential")) return 8;
+  if (text.includes("amount") || text.includes("due")) return 6;
+  if (text.includes("name") || text.includes("account")) return 5;
+  return 1;
 }
 
 function sourceLabel(source: string) {
