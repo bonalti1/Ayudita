@@ -475,7 +475,7 @@ function looksLikeMemoryQuestion(text: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-  return /\b(find|search|show|remember|last|latest|previous|yesterday|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer)\b/.test(
+  return /\b(find|search|show|remember|last|latest|previous|yesterday|earlier|papers|wifi|password|network|ssid|credential|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer|contrasena|contraseña|red|clave|credencial)\b/.test(
     normalized
   );
 }

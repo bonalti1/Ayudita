@@ -152,6 +152,12 @@ function sanitizeDecisionLanguage(body: string, language: "en" | "es") {
 
   if (language === "en") {
     return body
+      .replace(/\b[Tt]he document says you need to pay\b/g, "The document says the amount due is")
+      .replace(/\b[Tt]he document says you have to pay\b/g, "The document says the amount due is")
+      .replace(/\b[Tt]he document says you must pay\b/g, "The document says the amount due is")
+      .replace(/\b[Tt]he document says you need to\b/g, "The document asks you to")
+      .replace(/\b[Tt]he document says you have to\b/g, "The document asks you to")
+      .replace(/\b[Tt]he document says you must\b/g, "The document asks you to")
       .replace(/\b[Yy]ou need to pay\b/g, "The document says the amount due is")
       .replace(/\b[Yy]ou have to pay\b/g, "The document says the amount due is")
       .replace(/\b[Yy]ou must pay\b/g, "The document says the amount due is")
