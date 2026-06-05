@@ -303,6 +303,37 @@ export async function answerLatestWhatsAppDocumentQuestion(input: {
   });
 }
 
+export async function findWhatsAppMemoryDocument(input: {
+  userPhone: string;
+  query: string;
+}): Promise<DecoderDocumentDetail | null> {
+  const documents = await listDecoderDocuments();
+  const candidates = documents.filter(
+    (document) =>
+      document.source === "whatsapp" &&
+      document.user_phone === input.userPhone &&
+      (document.status === "extracted" || document.status === "explained")
+  );
+
+  if (!candidates.length) return null;
+
+  const details = (
+    await Promise.all(candidates.slice(0, 30).map((document) => getDecoderDocument(document.id)))
+  ).filter((document): document is DecoderDocumentDetail => Boolean(document?.facts.length));
+
+  if (!details.length) return null;
+
+  const ranked = details
+    .map((document, index) => ({
+      document,
+      score: scoreMemoryDocument(input.query, document, index)
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  return best && best.score >= memoryMatchThreshold(input.query) ? best.document : null;
+}
+
 export async function answerDecoderDocumentQuestion(input: {
   documentId: string;
   userPhone: string;
@@ -613,6 +644,98 @@ function detectQuestionLanguage(question: string): "en" | "es" {
 
   if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
   return "es";
+}
+
+function scoreMemoryDocument(query: string, document: DecoderDocumentDetail, index: number) {
+  const normalizedQuery = normalizeSearchText(query);
+  const tokens = searchTokens(normalizedQuery);
+  const corpus = normalizeSearchText(
+    [
+      document.document_type,
+      document.document_category,
+      document.storage_path,
+      document.created_at,
+      ...document.facts.flatMap((fact) => [
+        fact.fact_type,
+        fact.label,
+        fact.fact_value,
+        fact.source_text
+      ])
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  let score = 0;
+  for (const token of tokens) {
+    if (corpus.includes(token)) score += token.length >= 5 ? 3 : 2;
+  }
+
+  if (/\b(last|latest|recent|previous|ultimo|ultima|reciente|anterior)\b/.test(normalizedQuery)) {
+    score += Math.max(0, 4 - index);
+  }
+
+  if (/\b(toll|tolls|peaje|peajes)\b/.test(normalizedQuery) && /\b(toll|hctra|ccrma|peaje|peajes)\b/.test(corpus)) {
+    score += 4;
+  }
+
+  if (/\b(wifi|wi fi|network|password|contrasena|contraseña|red)\b/.test(normalizedQuery) && /\b(wifi|wi fi|network|password|contrasena|contraseña|ssid|red)\b/.test(corpus)) {
+    score += 4;
+  }
+
+  return score;
+}
+
+function memoryMatchThreshold(query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (/\b(last|latest|recent|previous|ultimo|ultima|reciente|anterior)\b/.test(normalizedQuery)) {
+    return 2;
+  }
+  return 3;
+}
+
+function searchTokens(normalizedQuery: string) {
+  const stopWords = new Set([
+    "what",
+    "was",
+    "that",
+    "the",
+    "from",
+    "with",
+    "show",
+    "find",
+    "search",
+    "last",
+    "latest",
+    "me",
+    "my",
+    "que",
+    "cual",
+    "cuanto",
+    "del",
+    "con",
+    "busca",
+    "encuentra",
+    "muestra",
+    "ultimo",
+    "ultima"
+  ]);
+
+  return normalizedQuery
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+}
+
+function normalizeSearchText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/wi[\s-]?fi/g, "wifi")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function sanitizeFileName(fileName: string) {

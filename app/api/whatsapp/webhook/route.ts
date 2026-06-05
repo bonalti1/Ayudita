@@ -5,6 +5,7 @@ import {
   answerLatestWhatsAppDocumentQuestion,
   explainDecoderDocument,
   extractDecoderDocument,
+  findWhatsAppMemoryDocument,
   getDecoderDocument,
   getLatestPendingSensitiveQuestion,
   hasProcessedWhatsAppMessage,
@@ -144,6 +145,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (unlockResult) return unlockResult;
+
+    const memoryResult = await processTextMemoryMessage({
+      from,
+      text: message.text?.body ?? "",
+      messageId: message.id
+    });
+
+    if (memoryResult) return memoryResult;
 
     const followUpResult = await processTextFollowUpMessage({
       from,
@@ -346,6 +355,63 @@ async function processTextUnlockMessage(input: {
   };
 }
 
+async function processTextMemoryMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  const question = input.text.trim();
+  if (!question || !looksLikeMemoryQuestion(question)) return null;
+
+  const document = await findWhatsAppMemoryDocument({
+    userPhone: input.from,
+    query: question
+  });
+
+  if (!document) {
+    await sendTextIfConfigured(input.from, memoryNotFoundMessage(languageForText(question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "memory_not_found"
+    };
+  }
+
+  if (hasSensitiveFacts(document.facts) && document.review_status !== "reviewed") {
+    await rememberPendingSensitiveQuestion({
+      documentId: document.id,
+      userPhone: input.from,
+      question
+    });
+    await sendTextIfConfigured(input.from, sensitivePasswordRequestMessage(languageForText(question)));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: document.id,
+      action: "memory_sensitive_password_requested"
+    };
+  }
+
+  const answer = await answerDecoderDocumentQuestion({
+    documentId: document.id,
+    userPhone: input.from,
+    question
+  });
+
+  if (!answer) return null;
+
+  await sendTextIfConfigured(input.from, answer.body);
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: answer.document.id,
+    action: "memory_answered"
+  };
+}
+
 async function processTextFollowUpMessage(input: {
   from: string;
   text: string;
@@ -383,6 +449,13 @@ async function latestSensitivePendingDocument(userPhone: string) {
 
   for (const candidate of candidates) {
     const detail = await getDecoderDocument(candidate.id);
+    if (detail && hasSensitiveFacts(detail.facts) && (await getLatestPendingSensitiveQuestion(detail.id))) {
+      return detail;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const detail = await getDecoderDocument(candidate.id);
     if (detail && hasSensitiveFacts(detail.facts)) return detail;
   }
 
@@ -394,6 +467,17 @@ function looksLikeFollowUpQuestion(text: string) {
   if (!trimmed) return false;
   if (trimmed.length > 12) return true;
   return /[?¿]/.test(trimmed);
+}
+
+function looksLikeMemoryQuestion(text: string) {
+  const normalized = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return /\b(find|search|show|remember|last|latest|previous|yesterday|busca|buscar|encuentra|muestra|muestrame|ultimo|ultima|anterior|ayer)\b/.test(
+    normalized
+  );
 }
 
 function languageForText(text: string): "en" | "es" {
@@ -414,6 +498,14 @@ function sensitivePasswordRequestMessage(language: "en" | "es") {
   }
 
   return "Este documento tiene informacion sensible. Responde con la contraseña correcta de revision para revelarla.";
+}
+
+function memoryNotFoundMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "I could not find a saved document that matches that. You can send a new photo/PDF or ask for the latest document.";
+  }
+
+  return "No encontre un documento guardado que coincida con eso. Puedes mandar una nueva foto/PDF o preguntar por el documento mas reciente.";
 }
 
 async function sendTextIfConfigured(to: string, body: string) {
