@@ -13,6 +13,7 @@ import {
   listDecoderDocuments,
   markWhatsAppMessageProcessed,
   rememberPendingMemorySearch,
+  rememberDocumentAlias,
   rememberPendingSensitiveQuestion,
   resolvePendingMemorySearch,
   reviewDecoderDocument
@@ -384,7 +385,8 @@ async function processTextMemoryClarificationMessage(input: {
     from: input.from,
     question: combinedQuestion,
     messageId: input.messageId,
-    notFoundMessage: memoryStillNotFoundMessage(languageForText(combinedQuestion))
+    notFoundMessage: memoryStillNotFoundMessage(languageForText(combinedQuestion)),
+    aliasToRemember: clarification
   });
 
   if (result) return { ...result, action: `${result.action}_after_clarification` };
@@ -426,6 +428,7 @@ async function answerMemoryQuestion(input: {
   question: string;
   messageId?: string;
   notFoundMessage: string;
+  aliasToRemember?: string;
 }) {
   const document = await findWhatsAppMemoryDocument({
     userPhone: input.from,
@@ -443,6 +446,14 @@ async function answerMemoryQuestion(input: {
   }
 
   if (hasSensitiveFacts(document.facts) && document.review_status !== "reviewed") {
+    if (input.aliasToRemember) {
+      await rememberDocumentAlias({
+        documentId: document.id,
+        userPhone: input.from,
+        alias: input.aliasToRemember
+      });
+    }
+
     await rememberPendingSensitiveQuestion({
       documentId: document.id,
       userPhone: input.from,
@@ -465,6 +476,14 @@ async function answerMemoryQuestion(input: {
   });
 
   if (!answer) return null;
+
+  if (input.aliasToRemember) {
+    await rememberDocumentAlias({
+      documentId: answer.document.id,
+      userPhone: input.from,
+      alias: input.aliasToRemember
+    });
+  }
 
   await sendTextIfConfigured(input.from, answer.body);
 

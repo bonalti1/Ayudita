@@ -20,6 +20,7 @@ const DEFAULT_WEB_USER_PHONE = "web-demo";
 const WHATSAPP_MESSAGE_PREFIX = "whatsapp:message:";
 const PENDING_SENSITIVE_QUESTION_PREFIX = "whatsapp:pending_sensitive_question:";
 const PENDING_MEMORY_SEARCH_PREFIX = "whatsapp:pending_memory_search:";
+const DOCUMENT_ALIAS_PREFIX = "whatsapp:document_alias:";
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -324,10 +325,12 @@ export async function findWhatsAppMemoryDocument(input: {
 
   if (!details.length) return null;
 
+  const aliasesByDocumentId = await getDocumentAliasesById(details.map((document) => document.id));
+
   const ranked = details
     .map((document, index) => ({
       document,
-      score: scoreMemoryDocument(input.query, document, index)
+      score: scoreMemoryDocument(input.query, document, index, aliasesByDocumentId.get(document.id) ?? [])
     }))
     .sort((a, b) => b.score - a.score);
 
@@ -458,6 +461,22 @@ export async function resolvePendingMemorySearch(id: string, answer = "resolved"
 
   const { error } = await supabase.from("user_questions").update({ answer }).eq("id", id);
   if (error) throw error;
+}
+
+export async function rememberDocumentAlias(input: {
+  documentId: string;
+  userPhone: string;
+  alias: string;
+}) {
+  const alias = cleanAlias(input.alias);
+  if (!alias) return;
+
+  await logUserQuestion({
+    documentId: input.documentId,
+    userPhone: input.userPhone,
+    question: `${DOCUMENT_ALIAS_PREFIX}${alias}`,
+    answer: "saved"
+  });
 }
 
 function reviewStatusForAction(action: ReviewAction): ReviewStatus {
@@ -685,7 +704,12 @@ function detectQuestionLanguage(question: string): "en" | "es" {
   return "es";
 }
 
-function scoreMemoryDocument(query: string, document: DecoderDocumentDetail, index: number) {
+function scoreMemoryDocument(
+  query: string,
+  document: DecoderDocumentDetail,
+  index: number,
+  aliases: string[]
+) {
   const normalizedQuery = normalizeSearchText(query);
   const tokens = searchTokens(normalizedQuery);
   const corpus = normalizeSearchText(
@@ -694,6 +718,7 @@ function scoreMemoryDocument(query: string, document: DecoderDocumentDetail, ind
       document.document_category,
       document.storage_path,
       document.created_at,
+      ...aliases,
       ...document.facts.flatMap((fact) => [
         fact.fact_type,
         fact.label,
@@ -710,6 +735,20 @@ function scoreMemoryDocument(query: string, document: DecoderDocumentDetail, ind
     if (corpus.includes(token)) score += token.length >= 5 ? 3 : 2;
   }
 
+  for (const alias of aliases.map(normalizeSearchText)) {
+    if (alias && normalizedQuery.includes(alias)) score += 8;
+  }
+
+  if (mentionsAny(normalizedQuery, ["home", "house", "casa", "hogar"]) &&
+    aliases.map(normalizeSearchText).some((alias) => mentionsAny(alias, ["office", "oficina", "work", "trabajo", "business", "negocio"]))) {
+    score -= 10;
+  }
+
+  if (mentionsAny(normalizedQuery, ["office", "oficina", "work", "trabajo", "business", "negocio"]) &&
+    aliases.map(normalizeSearchText).some((alias) => mentionsAny(alias, ["home", "house", "casa", "hogar"]))) {
+    score -= 10;
+  }
+
   if (/\b(last|latest|recent|previous|ultimo|ultima|reciente|anterior)\b/.test(normalizedQuery)) {
     score += Math.max(0, 4 - index);
   }
@@ -723,6 +762,40 @@ function scoreMemoryDocument(query: string, document: DecoderDocumentDetail, ind
   }
 
   return score;
+}
+
+function mentionsAny(text: string, words: string[]) {
+  return words.some((word) => new RegExp(`\\b${word}\\b`).test(text));
+}
+
+async function getDocumentAliasesById(documentIds: string[]) {
+  const aliasesByDocumentId = new Map<string, string[]>();
+  if (!documentIds.length) return aliasesByDocumentId;
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("user_questions")
+    .select("document_id, question")
+    .in("document_id", documentIds)
+    .like("question", `${DOCUMENT_ALIAS_PREFIX}%`);
+
+  if (error) throw error;
+
+  for (const row of data ?? []) {
+    const documentId = row.document_id as string | null;
+    const question = row.question as string | null;
+    if (!documentId || !question) continue;
+
+    const aliases = aliasesByDocumentId.get(documentId) ?? [];
+    aliases.push(question.slice(DOCUMENT_ALIAS_PREFIX.length));
+    aliasesByDocumentId.set(documentId, aliases);
+  }
+
+  return aliasesByDocumentId;
+}
+
+function cleanAlias(alias: string) {
+  return alias.trim().slice(0, 80);
 }
 
 function memoryMatchThreshold(query: string) {
