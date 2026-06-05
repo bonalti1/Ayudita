@@ -853,14 +853,9 @@ svg {
   overflow-wrap: anywhere;
 }
 
-.detail-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-}
-
-.stacked-actions {
-  margin-top: 9px;
+.refresh-source {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .inline-status {
@@ -906,23 +901,6 @@ svg {
   font: inherit;
   font-size: 13px;
   padding: 9px 10px;
-}
-
-.review-actions {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.review-actions h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
-}
-
-.review-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .evidence-list {
@@ -1006,28 +984,6 @@ svg {
 .mini-card span {
   color: var(--muted);
   font-size: 12px;
-}
-
-.review {
-  padding: 16px;
-}
-
-.review-item {
-  padding: 12px;
-  border: 1px solid rgba(217, 54, 54, 0.12);
-  border-radius: var(--radius);
-  background: rgba(249, 228, 224, 0.38);
-}
-
-.review-item strong {
-  font-size: 14px;
-}
-
-.review-item p {
-  margin: 5px 0 12px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .whatsapp-thread {
@@ -1259,7 +1215,6 @@ svg {
     justify-self: start;
   }
 
-  .detail-actions,
   .command-stats,
   .mini-grid,
   .metric-strip {

@@ -48,10 +48,9 @@ const iconPaths = {
   )
 };
 
-type Filter = "all" | "pending" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
-type ReviewAction = "approve" | "flag" | "clearer_photo" | "reset";
+type Filter = "all" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
 type UiLanguage = "en" | "es";
-type ActiveView = "command" | "review" | "memory" | "documents";
+type ActiveView = "command" | "memory" | "documents";
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -68,18 +67,10 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("all");
   const [activeView, setActiveView] = useState<ActiveView>("command");
   const [uploadStatus, setUploadStatus] = useState("");
-  const [extractStatus, setExtractStatus] = useState("");
-  const [explainStatus, setExplainStatus] = useState("");
-  const [reviewStatus, setReviewStatus] = useState("");
-  const [sendStatus, setSendStatus] = useState("");
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>("en");
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockStatus, setUnlockStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [isExplaining, setIsExplaining] = useState(false);
-  const [isReviewing, setIsReviewing] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const isSpanish = uiLanguage === "es";
@@ -186,7 +177,7 @@ export default function Home() {
       }
 
       const data = (await response.json()) as { document: DecoderDocumentSummary };
-      setUploadStatus(ui("Document saved. Ready for extraction.", "Documento guardado. Listo para extracción."));
+      setUploadStatus(ui("Source saved. Ayudita can remember it now.", "Fuente guardada. Ayudita ya la puede recordar."));
       await refreshDocuments(data.document.id);
     } catch {
       setUploadStatus(ui("Could not upload the document.", "No se pudo subir el documento."));
@@ -194,137 +185,6 @@ export default function Home() {
       setIsUploading(false);
     }
   }
-
-  async function extractSelectedDocument() {
-    if (!selectedId) return;
-
-    setIsExtracting(true);
-    setExtractStatus(ui("Extracting evidence-backed facts...", "Extrayendo facts con evidencia..."));
-
-    try {
-      const response = await fetch(`/api/documents/${selectedId}/extract`, {
-        method: "POST"
-      });
-
-      const data = (await response.json().catch(() => null)) as
-        | { document?: DecoderDocumentDetail; error?: string }
-        | null;
-
-      if (!response.ok || !data?.document) {
-        setExtractStatus(data?.error ?? ui("Could not extract the document.", "No se pudo extraer el documento."));
-        return;
-      }
-
-      setSelectedDocument(data.document);
-      setExtractStatus(ui("Facts extracted and saved.", "Facts extraídos y guardados."));
-      await refreshDocuments(data.document.id);
-    } catch {
-      setExtractStatus(ui("Could not extract the document.", "No se pudo extraer el documento."));
-    } finally {
-      setIsExtracting(false);
-    }
-  }
-
-  async function explainSelectedDocument() {
-    if (!selectedId) return;
-
-    setIsExplaining(true);
-    setExplainStatus(ui("Generating explanation...", "Generando explicación..."));
-
-    try {
-      const response = await fetch(`/api/documents/${selectedId}/explain`, {
-        method: "POST"
-      });
-
-      const data = (await response.json().catch(() => null)) as
-        | { document?: DecoderDocumentDetail; error?: string }
-        | null;
-
-      if (!response.ok || !data?.document) {
-        setExplainStatus(data?.error ?? ui("Could not generate the explanation.", "No se pudo generar la explicación."));
-        return;
-      }
-
-      setSelectedDocument(data.document);
-      setExplainStatus(ui("Explanation generated. Human review is still needed.", "Explicación generada. Falta revisión humana."));
-      await refreshDocuments(data.document.id);
-    } catch {
-      setExplainStatus(ui("Could not generate the explanation.", "No se pudo generar la explicación."));
-    } finally {
-      setIsExplaining(false);
-    }
-  }
-
-  async function reviewSelectedDocument(action: ReviewAction) {
-    if (!selectedId) return;
-
-    setIsReviewing(true);
-    setReviewStatus(reviewActionPendingLabel(action, uiLanguage));
-
-    try {
-      const response = await fetch(`/api/documents/${selectedId}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
-      });
-
-      const data = (await response.json().catch(() => null)) as
-        | { document?: DecoderDocumentDetail; error?: string }
-        | null;
-
-      if (!response.ok || !data?.document) {
-        setReviewStatus(data?.error ?? ui("Could not update the review.", "No se pudo actualizar la revisión."));
-        return;
-      }
-
-      setSelectedDocument(data.document);
-      setReviewStatus(reviewActionDoneLabel(action, uiLanguage));
-      await refreshDocuments(data.document.id);
-    } catch {
-      setReviewStatus(ui("Could not update the review.", "No se pudo actualizar la revisión."));
-    } finally {
-      setIsReviewing(false);
-    }
-  }
-
-  async function sendSelectedToWhatsApp() {
-    if (!selectedId) return;
-
-    setIsSending(true);
-    setSendStatus(ui("Sending explanation through WhatsApp...", "Enviando explicación por WhatsApp..."));
-
-    try {
-      const response = await fetch(`/api/documents/${selectedId}/send-whatsapp`, {
-        method: "POST"
-      });
-
-      const data = (await response.json().catch(() => null)) as
-        | { document?: DecoderDocumentDetail; error?: string }
-        | null;
-
-      if (!response.ok || !data?.document) {
-        setSendStatus(data?.error ?? ui("Could not send through WhatsApp.", "No se pudo enviar por WhatsApp."));
-        return;
-      }
-
-      setSelectedDocument(data.document);
-      setSendStatus(ui("Explanation sent through WhatsApp.", "Explicación enviada por WhatsApp."));
-      await refreshDocuments(data.document.id);
-    } catch {
-      setSendStatus(ui("Could not send through WhatsApp.", "No se pudo enviar por WhatsApp."));
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  const reviewDocuments = useMemo(() => {
-    return documents.filter(
-      (document) =>
-        document.review_status === "pending" ||
-        document.review_status === "flagged" ||
-        document.status === "failed"
-    );
-  }, [documents]);
 
   const memoryDocuments = useMemo(() => {
     return documents.filter(
@@ -336,83 +196,67 @@ export default function Home() {
   }, [documents]);
 
   const recentDocuments = documents.slice(0, 5);
-  const needsAttentionDocuments = reviewDocuments.slice(0, 4);
+  const rememberedDocuments = memoryDocuments.slice(0, 4);
+  const disabledMemoryCount = documents.filter((document) => document.memory_disabled).length;
+  const sourceUseCount = documents.reduce((total, document) => total + (document.source_request_count ?? 0), 0);
 
   const visibleDocuments = useMemo(() => {
-    const viewDocuments =
-      activeView === "review" ? reviewDocuments : activeView === "memory" ? memoryDocuments : documents;
+    const viewDocuments = activeView === "memory" ? memoryDocuments : documents;
 
     if (activeView !== "documents") return viewDocuments;
 
     return viewDocuments.filter((document) => {
       if (filter === "all") return true;
-      if (filter === "pending") return document.review_status === "pending";
       if (filter === "memory") return Boolean(document.memory_aliases?.length) && !document.memory_disabled;
       if (filter === "credentials") return Boolean(document.has_credential_facts);
       if (filter === "whatsapp") return document.source === "whatsapp";
       if (filter === "disabled") return Boolean(document.memory_disabled);
       return document.status === filter;
     });
-  }, [activeView, documents, filter, memoryDocuments, reviewDocuments]);
+  }, [activeView, documents, filter, memoryDocuments]);
 
-  const pendingCount = documents.filter((document) => document.review_status === "pending").length;
   const explainedCount = documents.filter((document) => document.status === "explained").length;
   const memoryCount = documents.filter((document) => document.memory_aliases?.length).length;
   const credentialCount = documents.filter((document) => document.has_credential_facts).length;
-  const flaggedCount = documents.filter((document) => document.review_status === "flagged").length;
 
   const viewTitle =
     activeView === "command"
       ? ui("Command Center", "Centro de mando")
-      : activeView === "review"
-        ? ui("Review Queue", "Cola de revisión")
-        : activeView === "memory"
-          ? ui("Memory Dashboard", "Dashboard de memoria")
-          : ui("Document Library", "Biblioteca de documentos");
+      : activeView === "memory"
+        ? ui("Memory Dashboard", "Dashboard de memoria")
+        : ui("Document Library", "Biblioteca de documentos");
 
   const viewDescription =
     activeView === "command"
       ? ui(
-          "Start here: what needs attention, what Ayudita knows, and what can be trusted.",
-          "Empieza aquí: qué necesita atención, qué sabe Ayudita y qué se puede confiar."
-        )
-      : activeView === "review"
-        ? ui(
-            "Approve, flag, or ask for clearer source material before answers go out.",
-            "Aprueba, marca o pide una fuente más clara antes de enviar respuestas."
-          )
-        : activeView === "memory"
-          ? ui(
-              "See what Ayudita can remember, where it came from, and whether it is searchable.",
-              "Ve qué puede recordar Ayudita, de dónde vino y si se puede buscar."
-            )
-          : ui(
-              "Browse the raw archive by source, type, status, and memory labels.",
-              "Busca en el archivo original por fuente, tipo, estado y etiquetas de memoria."
-            );
-
-  const listTitle =
-    activeView === "review"
-      ? ui("Needs Review", "Necesita revisión")
-      : activeView === "memory"
-        ? ui("Known Memory", "Memoria conocida")
-        : ui("Received Documents", "Documentos recibidos");
-
-  const listDescription =
-    activeView === "review"
-      ? ui(
-          "These are the items where trust needs a human decision.",
-          "Estos son los elementos donde la confianza necesita una decisión humana."
+          "Start here: what Ayudita remembers, where it came from, and how proof is available.",
+          "Empieza aquí: qué recuerda Ayudita, de dónde vino y cómo está disponible la prueba."
         )
       : activeView === "memory"
         ? ui(
-            "Credential facts, labels, disabled memories, and frequently used source material live here.",
-            "Credenciales, etiquetas, memorias desactivadas y fuentes usadas viven aquí."
+            "See what Ayudita can remember, where it came from, and whether it is searchable.",
+            "Ve qué puede recordar Ayudita, de dónde vino y si se puede buscar."
           )
         : ui(
-            "Everything lands here after being saved as a raw document.",
-            "Todo entra aquí después de guardarse como raw document."
+            "Browse the raw archive by source, type, status, and memory labels.",
+            "Busca en el archivo original por fuente, tipo, estado y etiquetas de memoria."
           );
+
+  const listTitle =
+    activeView === "memory"
+      ? ui("Known Memory", "Memoria conocida")
+      : ui("Saved Source Library", "Biblioteca de fuentes guardadas");
+
+  const listDescription =
+    activeView === "memory"
+      ? ui(
+          "Credential facts, labels, disabled memories, and frequently used source material live here.",
+          "Credenciales, etiquetas, memorias desactivadas y fuentes usadas viven aquí."
+        )
+      : ui(
+          "Everything Ayudita can reference later lives here as the source of truth.",
+          "Todo lo que Ayudita puede referenciar después vive aquí como fuente de verdad."
+        );
 
   return (
     <div className="page">
@@ -424,10 +268,6 @@ export default function Home() {
           <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}>
             <Icon>{iconPaths.home}</Icon>
             {ui("Command Center", "Centro de mando")}
-          </button>
-          <button className={activeView === "review" ? "active" : ""} onClick={() => setActiveView("review")}>
-            <Icon>{iconPaths.shield}</Icon>
-            {ui("Review", "Revisión")}
           </button>
           <button className={activeView === "memory" ? "active" : ""} onClick={() => setActiveView("memory")}>
             <Icon>{iconPaths.doc}</Icon>
@@ -468,7 +308,7 @@ export default function Home() {
                 Español
               </button>
             </div>
-            <button className="icon-button" title={ui("Pending review", "Revisión pendiente")} aria-label={ui("Pending review", "Revisión pendiente")}>
+            <button className="icon-button" title={ui("Memory proof", "Prueba de memoria")} aria-label={ui("Memory proof", "Prueba de memoria")}>
               <Icon>{iconPaths.shield}</Icon>
             </button>
           </div>
@@ -485,8 +325,8 @@ export default function Home() {
               <strong>{ui("Main rule", "Regla principal")}</strong>
               <span>
                 {ui(
-                  "The original document is the source of truth. The explanation should only use extracted facts with source text.",
-                  "El documento original es la fuente de verdad. La explicación solo debe hablar de facts extraídos con texto fuente."
+                  "The original document is the source of truth. Answers should only use saved facts with source text.",
+                  "El documento original es la fuente de verdad. Las respuestas solo deben usar facts guardados con texto fuente."
                 )}
               </span>
             </div>
@@ -519,16 +359,16 @@ export default function Home() {
               <span>{ui("documents", "documentos")}</span>
             </div>
             <div>
-              <strong>{pendingCount}</strong>
-              <span>{ui("pending", "pendientes")}</span>
+              <strong>{memoryCount}</strong>
+              <span>{ui("memories", "memorias")}</span>
             </div>
             <div>
               <strong>{explainedCount}</strong>
-              <span>{ui("explained", "explicados")}</span>
+              <span>{ui("answer-ready", "listos para responder")}</span>
             </div>
             <div>
-              <strong>{memoryCount}</strong>
-              <span>{ui("memories", "memorias")}</span>
+              <strong>{sourceUseCount}</strong>
+              <span>{ui("source requests", "fuentes pedidas")}</span>
             </div>
             <div>
               <strong>{credentialCount}</strong>
@@ -542,40 +382,40 @@ export default function Home() {
                 <section className="panel command-panel">
                   <div className="panel-header">
                     <div>
-                      <h2>{ui("What Needs Attention", "Qué necesita atención")}</h2>
+                      <h2>{ui("What Ayudita Remembers", "Qué recuerda Ayudita")}</h2>
                       <p>
                         {ui(
-                          "The queue Ayudita should not fully automate yet.",
-                          "La cola que Ayudita todavía no debe automatizar por completo."
+                          "The most useful saved memories and credential sources.",
+                          "Las memorias guardadas y fuentes credenciales más útiles."
                         )}
                       </p>
                     </div>
-                    <span className="status review">{ui(`${reviewDocuments.length} items`, `${reviewDocuments.length} elementos`)}</span>
+                    <span className="status ready">{ui(`${memoryDocuments.length} memories`, `${memoryDocuments.length} memorias`)}</span>
                   </div>
                   <div className="priority-list">
                     {isLoading ? <div className="empty-state">{ui("Loading documents...", "Cargando documentos...")}</div> : null}
-                    {!isLoading && needsAttentionDocuments.length === 0 ? (
+                    {!isLoading && rememberedDocuments.length === 0 ? (
                       <div className="empty-state">
-                        <strong>{ui("Nothing urgent right now.", "Nada urgente por ahora.")}</strong>
+                        <strong>{ui("No memories saved yet.", "Aún no hay memorias guardadas.")}</strong>
                         <span>
                           {ui(
-                            "New uploads and uncertain answers will appear here first.",
-                            "Nuevas cargas y respuestas inciertas aparecerán aquí primero."
+                            "Upload a source or answer a question so Ayudita can build useful memory.",
+                            "Sube una fuente o responde una pregunta para que Ayudita construya memoria útil."
                           )}
                         </span>
                       </div>
                     ) : null}
-                    {needsAttentionDocuments.map((document) => (
+                    {rememberedDocuments.map((document) => (
                       <button
                         key={document.id}
                         className="priority-item"
                         onClick={() => {
-                          setActiveView("review");
+                          setActiveView("memory");
                           setSelectedId(document.id);
                         }}
                       >
                         <div className={`memory-icon ${statusTone(document.status, document.review_status)}`}>
-                          <Icon>{iconPaths.shield}</Icon>
+                          <Icon>{iconPaths.doc}</Icon>
                         </div>
                         <div>
                           <strong>{documentTitle(document, uiLanguage)}</strong>
@@ -641,26 +481,26 @@ export default function Home() {
                 <section className="panel command-panel">
                   <div className="panel-header">
                     <div>
-                      <h2>{ui("Trust Snapshot", "Snapshot de confianza")}</h2>
-                      <p>{ui("The health of answers, proof, and memory.", "La salud de respuestas, pruebas y memoria.")}</p>
+                      <h2>{ui("Source & Proof", "Fuente y prueba")}</h2>
+                      <p>{ui("The health of saved sources and retrievable originals.", "La salud de fuentes guardadas y originales recuperables.")}</p>
                     </div>
                   </div>
                   <div className="command-stats">
                     <div>
-                      <strong>{pendingCount}</strong>
-                      <span>{ui("waiting for review", "esperando revisión")}</span>
+                      <strong>{documents.length}</strong>
+                      <span>{ui("saved sources", "fuentes guardadas")}</span>
                     </div>
                     <div>
-                      <strong>{flaggedCount}</strong>
-                      <span>{ui("flagged", "marcados")}</span>
+                      <strong>{sourceUseCount}</strong>
+                      <span>{ui("proof requests", "pedidos de prueba")}</span>
                     </div>
                     <div>
                       <strong>{memoryCount}</strong>
                       <span>{ui("searchable memories", "memorias buscables")}</span>
                     </div>
                     <div>
-                      <strong>{credentialCount}</strong>
-                      <span>{ui("credential sources", "fuentes credenciales")}</span>
+                      <strong>{disabledMemoryCount}</strong>
+                      <span>{ui("disabled memories", "memorias desactivadas")}</span>
                     </div>
                   </div>
                 </section>
@@ -684,7 +524,7 @@ export default function Home() {
                     </div>
                     <div>
                       <strong>{ui("2. Show why it is trusted", "2. Mostrar por qué se confía")}</strong>
-                      <span>{ui("Reference the source document and exact extracted fact.", "Referenciar el documento fuente y el fact extraído.")}</span>
+                      <span>{ui("Reference the source document and exact saved fact.", "Referenciar el documento fuente y el fact guardado.")}</span>
                     </div>
                     <div>
                       <strong>{ui("3. Offer the original", "3. Ofrecer el original")}</strong>
@@ -703,12 +543,10 @@ export default function Home() {
                     <h2>{listTitle}</h2>
                     <p>{listDescription}</p>
                   </div>
-                  <span className="status review">
-                    {activeView === "review"
-                      ? ui(`${reviewDocuments.length} to review`, `${reviewDocuments.length} por revisar`)
-                      : activeView === "memory"
-                        ? ui(`${memoryDocuments.length} memories`, `${memoryDocuments.length} memorias`)
-                        : ui(`${pendingCount} to review`, `${pendingCount} por revisar`)}
+                  <span className="status ready">
+                    {activeView === "memory"
+                      ? ui(`${memoryDocuments.length} memories`, `${memoryDocuments.length} memorias`)
+                      : ui(`${documents.length} sources`, `${documents.length} fuentes`)}
                   </span>
                 </div>
                 {activeView === "documents" ? (
@@ -718,10 +556,7 @@ export default function Home() {
                       ["memory", ui("Memory", "Memoria")],
                       ["credentials", ui("Credentials", "Credenciales")],
                       ["whatsapp", "WhatsApp"],
-                      ["pending", ui("Pending", "Pendiente")],
-                      ["received", ui("Received", "Recibido")],
-                      ["extracted", ui("Extracted", "Extraído")],
-                      ["explained", ui("Explained", "Explicado")],
+                      ["received", ui("Saved", "Guardado")],
                       ["disabled", ui("Do not search", "No buscar")],
                       ["failed", ui("Failed", "Falló")]
                     ].map(([value, label]) => (
@@ -736,9 +571,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="section-hint">
-                    {activeView === "review"
-                      ? ui("Only uncertain, failed, or pending items show here.", "Aquí solo aparecen elementos inciertos, fallidos o pendientes.")
-                      : ui("Only documents that affect memory show here.", "Aquí solo aparecen documentos que afectan la memoria.")}
+                    {ui("Only documents that affect memory show here.", "Aquí solo aparecen documentos que afectan la memoria.")}
                   </div>
                 )}
 
@@ -800,8 +633,8 @@ export default function Home() {
                       <p className="summary">
                         {selectedDocument.explanations[0]?.body ??
                           ui(
-                            "The document is already saved. Extraction and explanation still need to run.",
-                            "El documento ya está guardado. Falta correr extracción y explicación."
+                            "This source is saved. Ayudita can use it later when a question matches its memory labels, facts, or source text.",
+                            "Esta fuente está guardada. Ayudita la puede usar después cuando una pregunta coincida con sus etiquetas, facts o texto fuente."
                           )}
                       </p>
                       {hasSensitiveFacts(selectedDocument) ? (
@@ -810,19 +643,19 @@ export default function Home() {
                           <span>
                             {selectedDocument.sensitive_info_locked
                               ? ui(
-                                  "Enter the review password to reveal visible passwords, accounts, addresses, or codes.",
-                                  "Ingresa la contraseña de revisión para revelar passwords, cuentas, direcciones o códigos visibles."
+                                  "Enter the access password to reveal visible passwords, accounts, addresses, or codes.",
+                                  "Ingresa la contraseña de acceso para revelar passwords, cuentas, direcciones o códigos visibles."
                                 )
                               : ui(
-                                  "Review visible passwords, accounts, addresses, or codes before approving and sending through WhatsApp.",
-                                  "Revisa passwords, cuentas, direcciones o códigos visibles antes de aprobar y enviar por WhatsApp."
+                                  "Sensitive values are visible. Use them only as source-backed memory.",
+                                  "Los valores sensibles están visibles. Úsalos solo como memoria respaldada por fuente."
                                 )}
                           </span>
                           {selectedDocument.sensitive_info_locked ? (
                             <form className="unlock-form" onSubmit={unlockSensitiveInfo}>
                               <input
                                 type="password"
-                                placeholder={ui("Review password", "Contraseña de revisión")}
+                                placeholder={ui("Access password", "Contraseña de acceso")}
                                 value={unlockPassword}
                                 onChange={(event) => setUnlockPassword(event.target.value)}
                                 disabled={isUnlocking}
@@ -843,10 +676,9 @@ export default function Home() {
                         <InfoField label="Source" value={selectedDocument.source} />
                         <InfoField label="Storage" value={selectedDocument.storage_path} />
                         <InfoField label="MIME" value={selectedDocument.mime_type ?? ui("Not detected", "No detectado")} />
-                        <InfoField label="Facts" value={String(selectedDocument.facts.length)} />
                         <InfoField
-                          label="Review"
-                          value={reviewStatusLabel(selectedDocument.review_status, uiLanguage)}
+                          label={ui("Saved facts", "Facts guardados")}
+                          value={String(selectedDocument.facts.length)}
                         />
                       </div>
                       <section className="memory-command">
@@ -892,76 +724,12 @@ export default function Home() {
                         </div>
                         <p className="memory-hint">{memoryHint(selectedDocument, uiLanguage)}</p>
                       </section>
-                      <div className="detail-actions">
-                        <button
-                          className="primary"
-                          onClick={extractSelectedDocument}
-                          disabled={isExtracting}
-                        >
-                          <Icon>{iconPaths.shield}</Icon>
-                          {isExtracting ? ui("Extracting...", "Extrayendo...") : ui("Extract facts", "Extraer facts")}
-                        </button>
-                        <button className="secondary" onClick={() => refreshDocuments(selectedDocument.id)}>
-                          {ui("Refresh", "Actualizar")}
-                        </button>
-                      </div>
-                      {extractStatus ? <p className="inline-status">{extractStatus}</p> : null}
-                      <div className="detail-actions stacked-actions">
-                        <button
-                          className="primary"
-                          onClick={explainSelectedDocument}
-                          disabled={isExplaining || selectedDocument.facts.length === 0}
-                        >
-                          <Icon>{iconPaths.send}</Icon>
-                          {isExplaining ? ui("Generating...", "Generando...") : ui("Generate explanation", "Generar explicación")}
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={sendSelectedToWhatsApp}
-                          disabled={isSending || !canSendWhatsApp(selectedDocument)}
-                        >
-                          {isSending ? ui("Sending...", "Enviando...") : ui("Send WhatsApp", "Enviar WhatsApp")}
-                        </button>
-                      </div>
-                      {explainStatus ? <p className="inline-status">{explainStatus}</p> : null}
-                      {sendStatus ? <p className="inline-status">{sendStatus}</p> : null}
-                      <div className="review-actions">
-                        <h3>{ui("Human review", "Revisión humana")}</h3>
-                        <div className="review-action-grid">
-                          <button
-                            className="small-button confirm"
-                            onClick={() => reviewSelectedDocument("approve")}
-                            disabled={isReviewing || !selectedDocument.explanations.length}
-                          >
-                            {ui("Approve", "Aprobar")}
-                          </button>
-                          <button
-                            className="small-button"
-                            onClick={() => reviewSelectedDocument("flag")}
-                            disabled={isReviewing}
-                          >
-                            {ui("Flag", "Marcar")}
-                          </button>
-                          <button
-                            className="small-button"
-                            onClick={() => reviewSelectedDocument("clearer_photo")}
-                            disabled={isReviewing}
-                          >
-                            {ui("Ask for clear photo", "Pedir foto clara")}
-                          </button>
-                          <button
-                            className="small-button"
-                            onClick={() => reviewSelectedDocument("reset")}
-                            disabled={isReviewing}
-                          >
-                            {ui("Back to pending", "Volver a pendiente")}
-                          </button>
-                        </div>
-                        {reviewStatus ? <p className="inline-status">{reviewStatus}</p> : null}
-                      </div>
+                      <button className="secondary refresh-source" onClick={() => refreshDocuments(selectedDocument.id)}>
+                        {ui("Refresh source", "Actualizar fuente")}
+                      </button>
                       {selectedDocument.facts.length ? (
                         <div className="evidence-list">
-                          <h3>{ui("Extracted Facts", "Facts extraídos")}</h3>
+                          <h3>{ui("Saved Facts", "Facts guardados")}</h3>
                           {selectedDocument.facts.map((fact) => (
                             <div className="evidence-item" key={fact.id}>
                               <div>
@@ -988,20 +756,22 @@ export default function Home() {
               <section className="panel side-stack">
                 <div className="panel-header">
                   <div>
-                    <h2>{ui("Next Stage", "Próxima etapa")}</h2>
-                    <p>{ui("Classification before explanation.", "Clasificación antes de explicación.")}</p>
+                    <h2>{ui("Best Answer Pattern", "Mejor patrón de respuesta")}</h2>
+                    <p>{ui("Simple, trusted, and source-backed.", "Simple, confiable y respaldado por fuente.")}</p>
                   </div>
                 </div>
-                <div className="review">
-                  <div className="review-item">
-                    <strong>{ui("Step 6: document type detector", "Step 6: detector de tipo de documento")}</strong>
-                    <p>
-                      {ui(
-                        "Ayudita now classifies letters, screenshots, receipts, bills, and other documents before extracting facts. The explanation only uses what was saved.",
-                        "Ayudita ahora clasifica cartas, screenshots, recibos, bills y otros documentos antes de extraer facts. La explicación solo usa lo que quedó guardado."
-                      )}
-                    </p>
-                    <button className="small-button confirm">{ui("Active", "Activo")}</button>
+                <div className="trust-steps">
+                  <div>
+                    <strong>{ui("Answer directly", "Contestar directo")}</strong>
+                    <span>{ui("Use the remembered fact when the match is clear.", "Usar el fact recordado cuando la coincidencia esté clara.")}</span>
+                  </div>
+                  <div>
+                    <strong>{ui("Name the source", "Nombrar la fuente")}</strong>
+                    <span>{ui("Say which image, PDF, or saved document supports the answer.", "Decir qué imagen, PDF o documento guardado respalda la respuesta.")}</span>
+                  </div>
+                  <div>
+                    <strong>{ui("Offer the original", "Ofrecer el original")}</strong>
+                    <span>{ui("Let the user request the actual image or document for confidence.", "Permitir que el usuario pida la imagen o documento real para confianza.")}</span>
                   </div>
                 </div>
               </section>
@@ -1009,23 +779,23 @@ export default function Home() {
               <section className="panel side-stack">
                 <div className="panel-header">
                   <div>
-                    <h2>WhatsApp</h2>
-                    <p>{ui("The same flow can start from a WhatsApp photo.", "El mismo flujo entra por foto de WhatsApp.")}</p>
+                    <h2>{ui("Example", "Ejemplo")}</h2>
+                    <p>{ui("How it should feel in WhatsApp.", "Cómo debe sentirse en WhatsApp.")}</p>
                   </div>
                 </div>
                 <div className="whatsapp-thread">
                   <div className="thread-row user">
-                    <div className="bubble user">{ui("I am sending you a photo of the document.", "Te mando una foto del documento.")}</div>
-                    <span className="thread-time">{ui("Input", "Entrada")}</span>
+                    <div className="bubble user">{ui("What is my office WiFi password?", "Cuál es mi password de WiFi de oficina?")}</div>
+                    <span className="thread-time">{ui("Question", "Pregunta")}</span>
                   </div>
                   <div className="thread-row">
                     <div className="bubble ai">
                       {ui(
-                        "I received your document. First I will save it safely, then I will review it with evidence.",
-                        "Recibí tu documento. Primero lo guardaré seguro y luego lo revisaré con evidencia."
+                        "The office WiFi password is saved from your Wi-Fi settings screenshot. Do you want me to send the original image too?",
+                        "El password del WiFi de oficina está guardado desde tu screenshot de configuración. ¿Quieres que te mande la imagen original también?"
                       )}
                     </div>
-                    <span className="thread-time">{ui("Future response", "Respuesta futura")}</span>
+                    <span className="thread-time">{ui("Trusted answer", "Respuesta confiable")}</span>
                   </div>
                 </div>
               </section>
@@ -1098,8 +868,8 @@ function memoryHint(document: DecoderDocumentDetail, language: UiLanguage) {
   }
 
   return isSpanish
-    ? "Este documento puede responder preguntas si coincide por tipo, fecha, texto extraído o contexto."
-    : "This document can answer questions when type, date, extracted text, or context matches.";
+    ? "Este documento puede responder preguntas si coincide por tipo, fecha, texto guardado o contexto."
+    : "This document can answer questions when type, date, saved text, or context matches.";
 }
 
 function documentTitle(
@@ -1142,57 +912,13 @@ function sourceLabel(source: string) {
   return source === "whatsapp" ? "WhatsApp" : "Web";
 }
 
-function statusLabel(status: DocumentStatus, reviewStatus: ReviewStatus, language: UiLanguage) {
+function statusLabel(status: DocumentStatus, _reviewStatus: ReviewStatus, language: UiLanguage) {
   const isSpanish = language === "es";
 
-  if (reviewStatus === "flagged") return isSpanish ? "Marcado" : "Flagged";
-  if (reviewStatus === "pending") return isSpanish ? "Revisar" : "Review";
-  if (status === "received") return isSpanish ? "Recibido" : "Received";
-  if (status === "extracted") return isSpanish ? "Extraído" : "Extracted";
-  if (status === "explained") return isSpanish ? "Explicado" : "Explained";
+  if (status === "received") return isSpanish ? "Guardado" : "Saved";
+  if (status === "extracted") return isSpanish ? "Recordado" : "Remembered";
+  if (status === "explained") return isSpanish ? "Listo" : "Ready";
   return isSpanish ? "Falló" : "Failed";
-}
-
-function reviewStatusLabel(reviewStatus: ReviewStatus, language: UiLanguage) {
-  const isSpanish = language === "es";
-
-  if (reviewStatus === "reviewed") return isSpanish ? "Revisado" : "Reviewed";
-  if (reviewStatus === "flagged") return isSpanish ? "Marcado" : "Flagged";
-  return isSpanish ? "Pendiente" : "Pending";
-}
-
-function reviewActionPendingLabel(action: ReviewAction, language: UiLanguage) {
-  const isSpanish = language === "es";
-
-  if (action === "approve") return isSpanish ? "Aprobando explicación..." : "Approving explanation...";
-  if (action === "flag") return isSpanish ? "Marcando documento..." : "Flagging document...";
-  if (action === "clearer_photo") {
-    return isSpanish ? "Marcando para pedir foto mas clara..." : "Marking to request a clearer photo...";
-  }
-  return isSpanish ? "Volviendo a pendiente..." : "Moving back to pending...";
-}
-
-function reviewActionDoneLabel(action: ReviewAction, language: UiLanguage) {
-  const isSpanish = language === "es";
-
-  if (action === "approve") {
-    return isSpanish
-      ? "Aprobado. Listo para enviar cuando conectemos WhatsApp."
-      : "Approved. Ready to send once WhatsApp is connected.";
-  }
-  if (action === "flag") return isSpanish ? "Marcado para revisión manual." : "Flagged for manual review.";
-  if (action === "clearer_photo") {
-    return isSpanish ? "Marcado para pedir una foto mas clara." : "Marked to request a clearer photo.";
-  }
-  return isSpanish ? "Documento volvió a pendiente." : "Document moved back to pending.";
-}
-
-function canSendWhatsApp(document: DecoderDocumentDetail) {
-  return (
-    document.source === "whatsapp" &&
-    document.review_status === "reviewed" &&
-    document.explanations.length > 0
-  );
 }
 
 function hasSensitiveFacts(document: DecoderDocumentDetail) {
