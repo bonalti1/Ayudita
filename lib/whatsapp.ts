@@ -8,9 +8,7 @@ type WhatsAppMedia = {
 type WhatsAppMediaMetadata = {
   url?: string;
   mime_type?: string;
-  error?: {
-    message?: string;
-  };
+  error?: WhatsAppGraphError;
 };
 
 const DEFAULT_IMAGE_MIME = "image/jpeg";
@@ -28,7 +26,13 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<WhatsAppMe
   const metadata = (await metadataResponse.json().catch(() => null)) as WhatsAppMediaMetadata | null;
 
   if (!metadataResponse.ok || !metadata?.url) {
-    throw new Error(metadata?.error?.message ?? "Could not load WhatsApp media metadata.");
+    throw new Error(
+      formatWhatsAppError(
+        "Could not load WhatsApp media metadata.",
+        metadataResponse.status,
+        metadata?.error
+      )
+    );
   }
 
   const fileResponse = await fetch(metadata.url, {
@@ -38,7 +42,10 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<WhatsAppMe
   });
 
   if (!fileResponse.ok) {
-    throw new Error("Could not download WhatsApp media file.");
+    const error = await readWhatsAppError(fileResponse);
+    throw new Error(
+      formatWhatsAppError("Could not download WhatsApp media file.", fileResponse.status, error)
+    );
   }
 
   return {
@@ -67,7 +74,8 @@ export async function sendWhatsAppText(to: string, body: string) {
   });
 
   if (!response.ok) {
-    throw new Error("Could not send WhatsApp message.");
+    const error = await readWhatsAppError(response);
+    throw new Error(formatWhatsAppError("Could not send WhatsApp message.", response.status, error));
   }
 }
 
@@ -96,6 +104,36 @@ function requireWhatsAppPhoneNumberId() {
   }
 
   return env.whatsappPhoneNumberId;
+}
+
+type WhatsAppGraphError = {
+  message?: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  fbtrace_id?: string;
+};
+
+type WhatsAppGraphErrorBody = {
+  error?: WhatsAppGraphError;
+};
+
+async function readWhatsAppError(response: Response) {
+  const body = (await response.json().catch(() => null)) as WhatsAppGraphErrorBody | null;
+  return body?.error;
+}
+
+function formatWhatsAppError(fallback: string, status: number, error?: WhatsAppGraphError) {
+  const details = [
+    `Meta status ${status}`,
+    error?.message,
+    error?.type ? `type ${error.type}` : undefined,
+    typeof error?.code === "number" ? `code ${error.code}` : undefined,
+    typeof error?.error_subcode === "number" ? `subcode ${error.error_subcode}` : undefined,
+    error?.fbtrace_id ? `trace ${error.fbtrace_id}` : undefined
+  ].filter(Boolean);
+
+  return details.length ? `${fallback} ${details.join(" | ")}` : fallback;
 }
 
 function mimeExtension(mimeType: string) {
