@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "qa:trusted-answers": "node scripts/trusted-answer-qa.mjs",
     "start": "next start",
     "lint": "next lint"
   },

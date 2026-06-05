@@ -644,6 +644,10 @@ async function processTextSourceDocumentMessage(input: {
     document,
     language: languageForText(input.text)
   });
+  await recordSourceDocumentSent({
+    documentId: document.id,
+    userPhone: input.from
+  });
 
   return {
     ok: true,

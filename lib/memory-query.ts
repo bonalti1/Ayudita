@@ -128,6 +128,15 @@ async function queryTrustedAnswerMemory(input: {
   const best = candidates[0];
   if (!best) return null;
 
+  if (hasTrustedAnswerAmbiguity(input.question, candidates)) {
+    return {
+      answer: null,
+      confidence: "none",
+      answer_source: "trusted_answer",
+      message: "I found more than one trusted answer that could match. Please choose the exact source or ask with more detail."
+    };
+  }
+
   const confidence =
     best.answer.confidence === "high" && best.score >= 8
       ? "high"
@@ -159,6 +168,25 @@ async function queryTrustedAnswerMemory(input: {
       source_text: best.answer.answer_source_text
     }
   };
+}
+
+function hasTrustedAnswerAmbiguity(question: string, candidates: TrustedAnswerCandidate[]) {
+  const [best, second] = candidates;
+  if (!best || !second) return false;
+  if (looksLikeCredentialQuestion(question)) return false;
+  if (best.score < 6 || second.score < 6) return false;
+  if (best.score - second.score > 6) return false;
+
+  const bestValue = normalizeForMatch(best.answer.answer_value ?? "");
+  const secondValue = normalizeForMatch(second.answer.answer_value ?? "");
+  if (!bestValue || !secondValue || bestValue === secondValue) return false;
+
+  const questionText = normalizeForMatch(question);
+  const bestTitle = normalizeForMatch(best.answer.title);
+  const secondTitle = normalizeForMatch(second.answer.title);
+
+  if (bestTitle && questionText.includes(bestTitle) && !questionText.includes(secondTitle)) return false;
+  return true;
 }
 
 function rankTrustedAnswerCandidate(question: string, answer: TrustedAnswerGroup): TrustedAnswerCandidate {
@@ -316,13 +344,21 @@ function looksLikeCredentialQuestion(question: string) {
 }
 
 function tokenize(value: string) {
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
+  return normalizeForMatch(value)
+    .split(/\s+/)
     .filter((token) => token.length >= 3);
 }
 
 function includesAny(value: string, tokens: string[]) {
-  const lower = value.toLowerCase();
+  const lower = normalizeForMatch(value);
   return tokens.some((token) => lower.includes(token.toLowerCase()));
+}
+
+function normalizeForMatch(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
