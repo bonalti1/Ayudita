@@ -433,29 +433,33 @@ export async function answerDecoderDocumentQuestion(input: {
     return null;
   }
 
-  let { body, model } = await answerFollowUpWithOpenAI({
+  const targetLanguage = detectQuestionLanguage(input.question);
+  const shouldUseOriginalFirst = shouldUseOriginalDocumentFirst(input.question);
+  let body = "";
+  let model = "";
+
+  if (shouldUseOriginalFirst) {
+    const fullDocumentAnswer = await answerQuestionFromOriginalDocument(document, input.question, targetLanguage);
+    if (fullDocumentAnswer) {
+      body = fullDocumentAnswer.body;
+      model = fullDocumentAnswer.model;
+    }
+  }
+
+  if (!body) {
+    const factsOnlyAnswer = await answerFollowUpWithOpenAI({
     question: input.question,
-    targetLanguage: detectQuestionLanguage(input.question),
+    targetLanguage,
     facts: document.facts,
     explanations: document.explanations
   });
+    body = factsOnlyAnswer.body;
+    model = factsOnlyAnswer.model;
+  }
 
-  if (shouldRetryQuestionWithOriginalDocument(body, input.question)) {
-    const { data: file, error: downloadError } = await createSupabaseServiceClient().storage
-      .from(RAW_DOCUMENTS_BUCKET)
-      .download(document.storage_path);
-
-    if (!downloadError && file) {
-      const fullDocumentAnswer = await answerFullDocumentQuestionWithOpenAI({
-        bytes: await file.arrayBuffer(),
-        mimeType: document.mime_type ?? "image/jpeg",
-        fileName: document.storage_path.split("/").pop() ?? "document",
-        question: input.question,
-        targetLanguage: detectQuestionLanguage(input.question),
-        facts: document.facts,
-        explanations: document.explanations
-      });
-
+  if (!shouldUseOriginalFirst && shouldRetryQuestionWithOriginalDocument(body, input.question)) {
+    const fullDocumentAnswer = await answerQuestionFromOriginalDocument(document, input.question, targetLanguage);
+    if (fullDocumentAnswer) {
       body = fullDocumentAnswer.body;
       model = fullDocumentAnswer.model;
     }
@@ -473,6 +477,28 @@ export async function answerDecoderDocumentQuestion(input: {
     body,
     model
   };
+}
+
+async function answerQuestionFromOriginalDocument(
+  document: DecoderDocumentDetail,
+  question: string,
+  targetLanguage: "en" | "es"
+) {
+  const { data: file, error: downloadError } = await createSupabaseServiceClient().storage
+    .from(RAW_DOCUMENTS_BUCKET)
+    .download(document.storage_path);
+
+  if (downloadError || !file) return null;
+
+  return answerFullDocumentQuestionWithOpenAI({
+    bytes: await file.arrayBuffer(),
+    mimeType: document.mime_type ?? "image/jpeg",
+    fileName: document.storage_path.split("/").pop() ?? "document",
+    question,
+    targetLanguage,
+    facts: document.facts,
+    explanations: document.explanations
+  });
 }
 
 export async function recordMemoryAnswer(input: {
@@ -1182,6 +1208,14 @@ function detectQuestionLanguage(question: string): "en" | "es" {
 
   if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
   return "es";
+}
+
+function shouldUseOriginalDocumentFirst(question: string) {
+  const normalizedQuestion = normalizeSearchText(question);
+
+  return /\b(where|what page|which page|page number|location|locate|find the line|where does it say|where does it mention|where in|donde|dónde|en que pagina|en qué página|pagina|página|donde dice|dónde dice|donde menciona|dónde menciona|ubicacion|ubicación|seccion|sección)\b/.test(
+    normalizedQuestion
+  );
 }
 
 function shouldRetryQuestionWithOriginalDocument(answer: string, question: string) {

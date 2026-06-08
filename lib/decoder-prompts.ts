@@ -103,6 +103,12 @@ Accuracy rules:
 - Do not guess.
 - If the document does not clearly show the answer, say that plainly.
 - If the question asks for a count, count the relevant mentions/items visible in the document and briefly say what you counted.
+- If the question asks where something appears, locate the closest matching text in the original document. Give page number when visible/available, section or heading if visible, and the nearby wording. If the exact phrase is not found, say that and list the closest related wording you found.
+- For source-location questions, use this short structure:
+  1. Found / Not found
+  2. Location
+  3. Nearby wording
+  4. What that means in plain language
 - If wording is uncertain because of OCR/visual quality, say what you could read and what remains unclear.
 
 Decision wording rules:
