@@ -808,6 +808,108 @@ svg {
   line-height: 1.35;
 }
 
+.source-lab-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 16px 0;
+}
+
+.source-lab-stats div {
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfaf8;
+}
+
+.source-lab-stats strong {
+  display: block;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.source-lab-stats span {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.source-lab-list {
+  display: grid;
+  padding-top: 16px;
+}
+
+.source-lab-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.source-lab-row:hover {
+  background: #fbfaf8;
+}
+
+.source-lab-copy {
+  min-width: 0;
+}
+
+.source-lab-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.source-lab-title-row h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-lab-title-row span {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.source-lab-copy p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.skill-question-list.compact {
+  margin-top: 8px;
+}
+
+.skill-question-list.compact span {
+  padding: 5px 7px;
+  background: #fff;
+  font-size: 10px;
+}
+
 .trust-steps {
   display: grid;
   gap: 10px;
@@ -1676,6 +1778,10 @@ svg {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .source-lab-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .trust-note {
     width: auto;
   }
@@ -1710,6 +1816,7 @@ svg {
   }
 
   .command-stats,
+  .source-lab-stats,
   .answer-mode-preview,
   .mini-grid,
   .metric-strip {
@@ -1723,5 +1830,20 @@ svg {
   .priority-item > .status {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .source-lab-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .source-lab-row > .status {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .source-lab-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
   }
 }

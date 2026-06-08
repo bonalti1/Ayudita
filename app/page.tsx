@@ -655,6 +655,16 @@ export default function Home() {
                   </div>
                 </section>
 
+                <SourceLabPanel
+                  documents={documents}
+                  language={uiLanguage}
+                  isLoading={isLoading}
+                  onOpenSource={(documentId) => {
+                    setActiveView("documents");
+                    setSelectedId(documentId);
+                  }}
+                />
+
                 <section className="panel command-panel">
                   <div className="panel-header">
                     <div>
@@ -1055,6 +1065,109 @@ function InfoField({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function SourceLabPanel({
+  documents,
+  language,
+  isLoading,
+  onOpenSource
+}: {
+  documents: DecoderDocumentSummary[];
+  language: UiLanguage;
+  isLoading: boolean;
+  onOpenSource: (documentId: string) => void;
+}) {
+  const isSpanish = language === "es";
+  const labDocuments = documents.slice(0, 8);
+  const rememberedCount = documents.filter(
+    (document) => document.status === "extracted" || document.status === "explained"
+  ).length;
+  const stats = [
+    {
+      label: "Drive",
+      value: documents.filter((document) => document.source === "drive").length
+    },
+    {
+      label: "WhatsApp",
+      value: documents.filter((document) => document.source === "whatsapp").length
+    },
+    {
+      label: isSpanish ? "Uploads" : "Uploads",
+      value: documents.filter((document) => document.source === "web").length
+    },
+    {
+      label: isSpanish ? "Recordados" : "Remembered",
+      value: rememberedCount
+    }
+  ];
+
+  return (
+    <section className="panel command-panel source-lab">
+      <div className="panel-header">
+        <div>
+          <h2>{isSpanish ? "Source Lab" : "Source Lab"}</h2>
+          <p>
+            {isSpanish
+              ? "Revisa que fuentes tiene Ayudita, que skill uso y que puede contestar."
+              : "See what sources Ayudita has, which skill it used, and what it can answer."}
+          </p>
+        </div>
+        <button className="small-button" onClick={() => onOpenSource(labDocuments[0]?.id ?? "")} disabled={!labDocuments.length}>
+          {isSpanish ? "Abrir fuente" : "Open source"}
+        </button>
+      </div>
+      <div className="source-lab-stats" aria-label={isSpanish ? "Salud de fuentes" : "Source health"}>
+        {stats.map((stat) => (
+          <div key={stat.label}>
+            <strong>{stat.value}</strong>
+            <span>{stat.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="source-lab-list">
+        {isLoading ? <div className="empty-state">{isSpanish ? "Cargando Source Lab..." : "Loading Source Lab..."}</div> : null}
+        {!isLoading && !labDocuments.length ? (
+          <div className="empty-state">
+            <strong>{isSpanish ? "No hay fuentes todavia." : "No sources yet."}</strong>
+            <span>{isSpanish ? "Sube un archivo o importa Drive para empezar." : "Upload a file or import Drive to start."}</span>
+          </div>
+        ) : null}
+        {labDocuments.map((document) => {
+          const skill = documentSkillProfile(document.document_category, isSpanish);
+          const proofReady = document.facts_count > 0 || document.status === "explained";
+
+          return (
+            <button className="source-lab-row" key={document.id} onClick={() => onOpenSource(document.id)}>
+              <div className={`memory-icon ${statusTone(document.status, document.review_status)}`}>
+                <Icon>{iconPaths.doc}</Icon>
+              </div>
+              <div className="source-lab-copy">
+                <div className="source-lab-title-row">
+                  <h3>{documentTitle(document, language)}</h3>
+                  <span>{sourceLabel(document.source)}</span>
+                </div>
+                <p>
+                  {skill.title} · {document.facts_count} facts ·{" "}
+                  {proofReady
+                    ? isSpanish ? "prueba lista" : "proof ready"
+                    : isSpanish ? "guardado primero" : "saved first"}
+                </p>
+                <div className="skill-question-list compact">
+                  {skill.questions.slice(0, 3).map((question) => (
+                    <span key={question}>{question}</span>
+                  ))}
+                </div>
+              </div>
+              <span className={`status ${statusClass(document.status, document.review_status)}`}>
+                {statusLabel(document.status, document.review_status, language)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1481,7 +1594,7 @@ function documentSkillProfile(category: string | null, isSpanish: boolean) {
   };
 
   const fallback = {
-    title: categoryLabel(key),
+    title: key === "unclear" ? (isSpanish ? "Documento general" : "General document") : categoryLabel(key),
     description: isSpanish
       ? "Ayudita usara texto visible, tipo, fecha y facts guardados para responder."
       : "Ayudita will use visible text, type, date, and saved facts to answer.",
