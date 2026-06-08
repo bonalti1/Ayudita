@@ -263,6 +263,14 @@ async function processMessage(message: WhatsAppMessage) {
 
     if (professionalRewriteResult) return professionalRewriteResult;
 
+    const moreDetailResult = await processTextMoreDetailMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (moreDetailResult) return moreDetailResult;
+
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
       text,
@@ -900,6 +908,76 @@ async function processTextProfessionalRewriteMessage(input: {
   };
 }
 
+async function processTextMoreDetailMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  if (!moreDetailChoiceFromText(input.text)) return null;
+
+  const language = languageForText(input.text);
+  const context = await getLatestMemoryAnswerContext(input.from);
+
+  if (!context?.documentId || !context.question) {
+    await sendTextIfConfigured(input.from, missingMoreDetailContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "more_detail_missing_context"
+    };
+  }
+
+  const document = await getDecoderDocument(context.documentId);
+  if (!document) {
+    await sendTextIfConfigured(input.from, missingMoreDetailContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: context.documentId,
+      action: "more_detail_missing_document"
+    };
+  }
+
+  const answer = await answerDecoderDocumentQuestion({
+    documentId: document.id,
+    userPhone: input.from,
+    question: moreDetailQuestion(context.question, language)
+  });
+
+  if (!answer?.body) {
+    await sendTextIfConfigured(input.from, missingMoreDetailContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      documentId: document.id,
+      action: "more_detail_missing_answer"
+    };
+  }
+
+  await rememberLatestMemoryAnswerContext({
+    documentId: document.id,
+    userPhone: input.from,
+    question: context.question,
+    answer: answer.body
+  });
+  await sendTextIfConfigured(input.from, answer.body);
+  await offerSourceDocumentIfUseful({
+    to: input.from,
+    documentId: document.id,
+    language
+  });
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    documentId: document.id,
+    action: "more_detail_sent"
+  };
+}
+
 async function processTextMemoryClarificationMessage(input: {
   from: string;
   text: string;
@@ -1239,6 +1317,12 @@ async function processTextFollowUpMessage(input: {
   if (!answer) return null;
 
   await sendTextIfConfigured(input.from, answer.body);
+  await rememberLatestMemoryAnswerContext({
+    documentId: answer.document.id,
+    userPhone: input.from,
+    question,
+    answer: answer.body
+  });
   await offerSourceDocumentIfUseful({
     to: input.from,
     documentId: answer.document.id,
@@ -1323,7 +1407,7 @@ function confirmationChoiceFromText(text: string): "yes" | "no" | null {
 function sourceDocumentChoiceFromText(text: string): "send" | "no" | null {
   const normalized = normalizeMemoryText(text).trim();
   if (
-    /^(?:source_document_send|yes|y|yeah|yep|sure|ok|okay|send it|send me it|send that|send this|send image|send photo|send picture|send document|send pdf|send source|show proof|show source|show it|show me|proof|source|original|actual image|image|photo|picture|document|pdf|si|s|claro|va|mandalo|mandala|mandamelo|mandamela|manda eso|manda imagen|mandar imagen|manda foto|mandar foto|manda documento|mandar documento|manda pdf|mandar pdf|muestra prueba|muestrame prueba|muestra fuente|muestrame fuente|muestra imagen|muestrame imagen|prueba|fuente|original)$/i.test(
+    /^(?:source_document_send|answer_show_proof|yes|y|yeah|yep|sure|ok|okay|send it|send me it|send that|send this|send image|send photo|send picture|send document|send pdf|send source|show proof|show source|show it|show me|proof|source|original|actual image|image|photo|picture|document|pdf|si|s|claro|va|mandalo|mandala|mandamelo|mandamela|manda eso|manda imagen|mandar imagen|manda foto|mandar foto|manda documento|mandar documento|manda pdf|mandar pdf|muestra prueba|muestrame prueba|muestra fuente|muestrame fuente|muestra imagen|muestrame imagen|prueba|fuente|original)$/i.test(
       normalized
     )
   ) {
@@ -1333,6 +1417,13 @@ function sourceDocumentChoiceFromText(text: string): "send" | "no" | null {
     return "no";
   }
   return null;
+}
+
+function moreDetailChoiceFromText(text: string) {
+  const normalized = normalizeMemoryText(text).trim();
+  return /^(?:answer_more_detail|more detail|more details|more info|explain more|expand|expand answer|tell me more|go deeper|mas detalle|mas detalles|dame mas detalle|explica mas|amplia|ampliar)$/i.test(
+    normalized
+  );
 }
 
 function needsMemoryClarification(text: string) {
@@ -1389,7 +1480,7 @@ async function offerSourceDocumentIfUseful(input: {
   await sendButtonsIfConfigured({
     to: input.to,
     body: sourceDocumentPrompt(document, input.language),
-    buttons: sourceDocumentButtons(document, input.language)
+    buttons: sourceDocumentButtons(input.language)
   });
 }
 
@@ -1596,33 +1687,26 @@ function whatsappMemoryAnswerMessage(answer: string, duplicateSourceCount: numbe
 function sourceDocumentPrompt(document: DecoderDocumentDetail, language: "en" | "es") {
   const sourceName = sourceDocumentKind(document, language);
   if (language === "en") {
-    return `Do you want me to send the actual original ${sourceName} I used?`;
+    return `What do you want to do next? I can show the original ${sourceName}, make the answer professional, or explain it with more detail.`;
   }
 
-  return `Quieres que te mande ${sourceName} original que use?`;
+  return `Que quieres hacer ahora? Puedo mostrar la ${sourceName} original, hacerlo profesional, o explicarlo con mas detalle.`;
 }
 
-function sourceDocumentButtons(document: DecoderDocumentDetail, language: "en" | "es") {
-  const sendTitle = sourceDocumentSendButtonTitle(document, language);
+function sourceDocumentButtons(language: "en" | "es") {
   if (language === "en") {
     return [
-      { id: "source_document_send", title: sendTitle },
+      { id: "source_document_send", title: "Proof" },
       { id: "answer_make_professional", title: "Professional" },
-      { id: "source_document_no", title: "No" }
+      { id: "answer_more_detail", title: "More detail" }
     ];
   }
 
   return [
-    { id: "source_document_send", title: sendTitle },
+    { id: "source_document_send", title: "Prueba" },
     { id: "answer_make_professional", title: "Profesional" },
-    { id: "source_document_no", title: "No" }
+    { id: "answer_more_detail", title: "Mas detalle" }
   ];
-}
-
-function sourceDocumentSendButtonTitle(document: DecoderDocumentDetail, language: "en" | "es") {
-  if (document.mime_type?.startsWith("image/")) return language === "en" ? "Send image" : "Mandar imagen";
-  if (document.mime_type === "application/pdf") return language === "en" ? "Send PDF" : "Mandar PDF";
-  return language === "en" ? "Send file" : "Mandar archivo";
 }
 
 function sourceDocumentKind(document: DecoderDocumentDetail, language: "en" | "es") {
@@ -1812,6 +1896,22 @@ function missingProfessionalRewriteContextMessage(language: "en" | "es") {
 function professionalRewriteMessage(body: string, language: "en" | "es") {
   if (language === "en") return `Professional version:\n\n${body}`;
   return `Version profesional:\n\n${body}`;
+}
+
+function missingMoreDetailContextMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Ask a document question first, then tap More detail and I can expand the answer.";
+  }
+
+  return "Primero haz una pregunta del documento, luego toca Mas detalle y puedo ampliar la respuesta.";
+}
+
+function moreDetailQuestion(question: string, language: "en" | "es") {
+  if (language === "en") {
+    return `${question}\n\nPlease explain this with more detail, but keep it clear and practical. Include the relevant source wording if available.`;
+  }
+
+  return `${question}\n\nExplicalo con mas detalle, pero claro y practico. Incluye la frase o seccion del documento si esta disponible.`;
 }
 
 function documentSelectionLabel(document: DecoderDocumentDetail) {
