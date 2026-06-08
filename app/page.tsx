@@ -961,6 +961,7 @@ export default function Home() {
                         </div>
                         <p className="memory-hint">{memoryHint(selectedDocument, uiLanguage)}</p>
                       </section>
+                      <DocumentSkillPanel document={selectedDocument} language={uiLanguage} />
                       <MemoryFactSummary document={selectedDocument} language={uiLanguage} />
                       <button className="secondary refresh-source" onClick={() => refreshDocuments(selectedDocument.id)}>
                         {ui("Refresh source", "Actualizar fuente")}
@@ -1382,6 +1383,119 @@ function MemoryFactSummary({
   );
 }
 
+function DocumentSkillPanel({
+  document,
+  language
+}: {
+  document: DecoderDocumentDetail;
+  language: UiLanguage;
+}) {
+  const isSpanish = language === "es";
+  const skill = documentSkillProfile(document.document_category, isSpanish);
+
+  return (
+    <section className="document-skill">
+      <div className="document-skill-head">
+        <div>
+          <span>{isSpanish ? "Skill de documento" : "Document skill"}</span>
+          <h3>{skill.title}</h3>
+        </div>
+        <strong>{skill.confidence}</strong>
+      </div>
+      <p>{skill.description}</p>
+      <div className="skill-question-list">
+        {skill.questions.map((question) => (
+          <span key={question}>{question}</span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function documentSkillProfile(category: string | null, isSpanish: boolean) {
+  const key = category ?? "unclear";
+  const profiles: Record<string, { title: string; description: string; questions: string[] }> = {
+    contract: {
+      title: isSpanish ? "Contrato" : "Contract",
+      description: isSpanish
+        ? "Busca clausulas, alcance, pagos, exclusiones, allowances, firmas y especificaciones."
+        : "Looks for clauses, scope, payments, exclusions, allowances, signatures, and specifications.",
+      questions: isSpanish
+        ? ["Que incluye?", "Donde lo dice?", "Cuantos allowances hay?"]
+        : ["What is included?", "Where does it say that?", "What allowances are listed?"]
+    },
+    blueprint_plan: {
+      title: isSpanish ? "Planos / diseno" : "Blueprint / plan",
+      description: isSpanish
+        ? "Busca cuartos, dimensiones, sqft, notas de techo, materiales, hojas y revisiones."
+        : "Looks for rooms, dimensions, square footage, ceiling notes, materials, sheets, and revisions.",
+      questions: isSpanish
+        ? ["Cuantos sqft muestra?", "Que notas de techo hay?", "Que cambio aparece?"]
+        : ["How many square feet?", "What ceiling notes are shown?", "What changed?"]
+    },
+    wifi_settings: {
+      title: isSpanish ? "WiFi / credencial" : "WiFi / credential",
+      description: isSpanish
+        ? "Busca nombre de red, password visible, router y contexto como oficina o casa."
+        : "Looks for network name, visible password, router details, and home/office context.",
+      questions: isSpanish
+        ? ["Cual es el password?", "Cual es la red?", "Mandame la prueba"]
+        : ["What is the password?", "What is the network?", "Send me the proof"]
+    },
+    bill_invoice: {
+      title: isSpanish ? "Factura / bill" : "Invoice / bill",
+      description: isSpanish
+        ? "Busca proveedor, monto, fecha de vencimiento, estado de pago y numero de cuenta."
+        : "Looks for vendor, amount, due date, payment status, and account or invoice number.",
+      questions: isSpanish
+        ? ["Cuanto se debe?", "Cuando vence?", "A quien se paga?"]
+        : ["How much is due?", "When is it due?", "Who is it payable to?"]
+    },
+    receipt: {
+      title: isSpanish ? "Recibo" : "Receipt",
+      description: isSpanish
+        ? "Busca tienda, monto pagado, fecha, metodo de pago y articulos visibles."
+        : "Looks for store, paid amount, date, payment method, and visible items.",
+      questions: isSpanish
+        ? ["Cuanto se pago?", "Donde se compro?", "Que articulos salen?"]
+        : ["How much was paid?", "Where was it purchased?", "What items are shown?"]
+    },
+    message_screenshot: {
+      title: isSpanish ? "Screenshot de mensaje" : "Message screenshot",
+      description: isSpanish
+        ? "Busca nombres, fechas, decisiones, citas, direcciones, telefonos y pendientes."
+        : "Looks for names, dates, decisions, appointments, addresses, phone numbers, and next steps.",
+      questions: isSpanish
+        ? ["Que se decidio?", "Quien lo dijo?", "Que fecha mencionan?"]
+        : ["What was decided?", "Who said it?", "What date is mentioned?"]
+    },
+    identity_document: {
+      title: isSpanish ? "Documento sensible" : "Sensitive document",
+      description: isSpanish
+        ? "Marca informacion personal sensible y mantiene la fuente protegida."
+        : "Flags sensitive personal information and keeps the source protected.",
+      questions: isSpanish
+        ? ["Que datos muestra?", "Mandame la prueba", "Que no se pudo leer?"]
+        : ["What details are shown?", "Send me the proof", "What could not be read?"]
+    }
+  };
+
+  const fallback = {
+    title: categoryLabel(key),
+    description: isSpanish
+      ? "Ayudita usara texto visible, tipo, fecha y facts guardados para responder."
+      : "Ayudita will use visible text, type, date, and saved facts to answer.",
+    questions: isSpanish
+      ? ["Que dice?", "Que datos importantes hay?", "Mandame la prueba"]
+      : ["What does it say?", "What important details are there?", "Send me the proof"]
+  };
+
+  return {
+    ...(profiles[key] ?? fallback),
+    confidence: key === "unclear" ? (isSpanish ? "Revisar" : "Review") : (isSpanish ? "Activo" : "Active")
+  };
+}
+
 function MemoryBadges({
   document,
   language
@@ -1393,6 +1507,7 @@ function MemoryBadges({
   const aliases = usefulMemoryAliases(document.memory_aliases);
 
   if (aliases.length) badges.push(...aliases.slice(0, 2));
+  if (document.document_category) badges.push(categoryLabel(document.document_category));
   if (document.has_credential_facts) badges.push(language === "es" ? "credencial" : "credential");
   if (document.memory_disabled) badges.push(language === "es" ? "no buscar" : "do not search");
   if (!badges.length) return null;

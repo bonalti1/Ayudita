@@ -1189,6 +1189,66 @@ svg {
   padding-bottom: 0;
 }
 
+.document-skill {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid rgba(49, 92, 122, 0.2);
+  border-radius: var(--radius);
+  background: var(--blue-soft);
+}
+
+.document-skill-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.document-skill-head span {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.document-skill-head h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+
+.document-skill-head strong {
+  height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--blue);
+  font-size: 11px;
+}
+
+.document-skill p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.skill-question-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-question-list span {
+  padding: 6px 8px;
+  border: 1px solid rgba(49, 92, 122, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 750;
+}
+
 .memory-record {
   display: grid;
   gap: 12px;

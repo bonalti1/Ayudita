@@ -15,11 +15,23 @@ Rules:
 - source_text must be the actual text copied from the document, as closely as you can read it.
 - For any date you calculated, provenance MUST be "COMPUTED" and source_text MUST contain the original phrasing.
 - key_dates and what_to_do are arrays; if nothing readable, return [].
-- document_category must classify the whole image/PDF. Use "screenshot" for phone, computer, app, web page, or settings screenshots.
+- document_category must classify the whole image/PDF into the most useful Ayudita skill:
+  - "wifi_settings": Wi-Fi, router, network, password, or settings screenshots that show network credentials.
+  - "message_screenshot": WhatsApp/text/email/social message screenshots where the important content is a conversation or decision.
+  - "blueprint_plan": plans, blueprints, floor plans, construction drawings, specs, elevations, room/dimension drawings, or design sheets.
+  - "contract": signed/unsigned agreements, proposals with terms, construction contracts, service contracts, scopes, allowances, or legal terms.
+  - "bill_invoice": invoices, bills, statements, payment notices, or amount-due documents.
+  - "receipt": proof of payment, store receipts, paid confirmations.
+  - "screenshot": phone, computer, app, web page, or settings screenshots that do not fit a more specific screenshot skill.
 - document_type should be the visible title or practical document type, such as "Loan Payment Notice", "Receipt", "Wi-Fi Settings Screenshot", or "Unknown".
 - detected_purpose should summarize what the item appears to be for, using only visible evidence.
 - Do NOT force non-letter documents into letter fields. For screenshots, receipts, settings pages, or generic documents, set letter-specific fields like issuing_agency, recipient_name, case_or_receipt_number, why_sent, fees, and what_to_do to UNKNOWN/[] unless the document clearly contains them.
 - general_facts should contain the useful visible details that do not fit the letter fields. Include labels like "Network name", "Account number", "Due amount", "Store", "Status", "Phone number", "Address", "Visible warning", or "Instruction".
+- For contracts, extract parties, project/property, scope, allowances, exclusions, payment terms, dates, signatures, and practical specifications into general_facts.
+- For blueprints/plans, extract project name, address, rooms, dimensions, square footage, ceiling/design notes, selected materials, page/sheet labels, and visible revision dates.
+- For invoices/bills/receipts, extract vendor, amount, due date, paid status, account/invoice number, service/item, and contact info.
+- For message screenshots, extract sender/contact names, dates/times, commitments, decisions, appointments, addresses, phone numbers, and requested next steps.
+- For Wi-Fi/settings screenshots, extract network name, Wi-Fi password, router/network identifiers, and whether the screenshot is for home/office/business only if visible.
 - If a password, access code, account number, address, phone, or other sensitive value is visibly present, extract it only as a fact with exact source_text and a clear label. Do not explain what to do with it.
 - For letters/notices, keep the core letter fields populated when supported, and use general_facts only for additional important facts.
 - Do NOT output any key not listed in the schema. Do NOT add commentary.`;

@@ -1111,6 +1111,7 @@ async function storeExtraction(documentId: string, extraction: DecoderExtraction
     .update({
       status: "extracted",
       document_type: documentTypeTitle(extraction),
+      document_category: extraction.document_category,
       language: extraction.language_detected
     })
     .eq("id", documentId);
