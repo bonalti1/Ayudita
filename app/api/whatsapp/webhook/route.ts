@@ -37,7 +37,8 @@ import {
   resolvePendingMemorySelection,
   resolvePendingMemorySearch,
   resolvePendingSourceDocument,
-  reviewDecoderDocument
+  reviewDecoderDocument,
+  rewriteLatestMemoryAnswerProfessionally
 } from "@/lib/decoder-store";
 import { env } from "@/lib/env";
 import { querySavedMemory } from "@/lib/memory-query";
@@ -253,6 +254,14 @@ async function processMessage(message: WhatsAppMessage) {
     });
 
     if (memoryCorrectionResult) return memoryCorrectionResult;
+
+    const professionalRewriteResult = await processTextProfessionalRewriteMessage({
+      from,
+      text,
+      messageId: message.id
+    });
+
+    if (professionalRewriteResult) return professionalRewriteResult;
 
     const memoryClarificationResult = await processTextMemoryClarificationMessage({
       from,
@@ -859,6 +868,38 @@ async function processTextMemoryCorrectionMessage(input: {
   };
 }
 
+async function processTextProfessionalRewriteMessage(input: {
+  from: string;
+  text: string;
+  messageId?: string;
+}) {
+  if (!professionalRewriteChoiceFromText(input.text)) return null;
+
+  const language = languageForText(input.text);
+  const rewrite = await rewriteLatestMemoryAnswerProfessionally({
+    userPhone: input.from,
+    targetLanguage: language
+  });
+
+  if (!rewrite?.body) {
+    await sendTextIfConfigured(input.from, missingProfessionalRewriteContextMessage(language));
+
+    return {
+      ok: true,
+      messageId: input.messageId ?? null,
+      action: "professional_rewrite_missing_context"
+    };
+  }
+
+  await sendTextIfConfigured(input.from, professionalRewriteMessage(rewrite.body, language));
+
+  return {
+    ok: true,
+    messageId: input.messageId ?? null,
+    action: "professional_rewrite_sent"
+  };
+}
+
 async function processTextMemoryClarificationMessage(input: {
   from: string;
   text: string;
@@ -1040,7 +1081,8 @@ async function answerMemoryQuestionDirectlyIfConfident(input: {
   await rememberLatestMemoryAnswerContext({
     documentId: document.id,
     userPhone: input.from,
-    question: input.question
+    question: input.question,
+    answer: result.answer
   });
 
   await sendTextIfConfigured(
@@ -1148,7 +1190,8 @@ async function answerSelectedMemoryDocument(input: {
   await rememberLatestMemoryAnswerContext({
     documentId: answer.document.id,
     userPhone: input.from,
-    question: input.question
+    question: input.question,
+    answer: answer.body
   });
   await sendTextIfConfigured(input.from, answer.body);
 
@@ -1434,6 +1477,13 @@ function memoryCorrectionFromText(text: string):
   return null;
 }
 
+function professionalRewriteChoiceFromText(text: string) {
+  const normalized = normalizeMemoryText(text).trim();
+  return /^(?:answer_make_professional|professional|make professional|make it professional|rewrite professionally|formal|make formal|send professional|profesional|hazlo profesional|hazlo formal|redactalo profesional|redactalo formal|version profesional|versión profesional)$/i.test(
+    normalized
+  );
+}
+
 function memoryAliasFromCorrectionText(text: string) {
   const match = text.trim().match(
     /(?:as|como)\s+["']?([^"']{2,80})["']?\s*$/i
@@ -1557,12 +1607,14 @@ function sourceDocumentButtons(document: DecoderDocumentDetail, language: "en" |
   if (language === "en") {
     return [
       { id: "source_document_send", title: sendTitle },
+      { id: "answer_make_professional", title: "Professional" },
       { id: "source_document_no", title: "No" }
     ];
   }
 
   return [
     { id: "source_document_send", title: sendTitle },
+    { id: "answer_make_professional", title: "Profesional" },
     { id: "source_document_no", title: "No" }
   ];
 }
@@ -1747,6 +1799,19 @@ function memoryCurrentProofConfirmedMessage(alias: string | undefined, language:
   return alias
     ? `Listo. Usare esta prueba como la memoria principal de "${alias}" la proxima vez.`
     : "Listo. Usare esta prueba como la principal la proxima vez.";
+}
+
+function missingProfessionalRewriteContextMessage(language: "en" | "es") {
+  if (language === "en") {
+    return "Ask a document question first, then tap Professional and I can rewrite the answer for forwarding.";
+  }
+
+  return "Primero haz una pregunta del documento, luego toca Profesional y puedo redactar la respuesta para reenviarla.";
+}
+
+function professionalRewriteMessage(body: string, language: "en" | "es") {
+  if (language === "en") return `Professional version:\n\n${body}`;
+  return `Version profesional:\n\n${body}`;
 }
 
 function documentSelectionLabel(document: DecoderDocumentDetail) {

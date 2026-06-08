@@ -12,7 +12,8 @@ import {
   answerFollowUpWithOpenAI,
   answerFullDocumentQuestionWithOpenAI,
   explainFactsWithOpenAI,
-  extractFactsWithOpenAI
+  extractFactsWithOpenAI,
+  rewriteAnswerProfessionallyWithOpenAI
 } from "./decoder-openai";
 import { sendWhatsAppText } from "./whatsapp";
 
@@ -641,12 +642,13 @@ export async function rememberLatestMemoryAnswerContext(input: {
   documentId: string;
   userPhone: string;
   question: string;
+  answer?: string;
 }) {
   await logUserQuestion({
     documentId: input.documentId,
     userPhone: input.userPhone,
     question: `${LAST_MEMORY_ANSWER_PREFIX}${input.question}`,
-    answer: "active"
+    answer: input.answer ? JSON.stringify({ answer: input.answer }) : "active"
   });
 }
 
@@ -655,9 +657,8 @@ export async function getLatestMemoryAnswerContext(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("document_id, question")
+    .select("document_id, question, answer")
     .eq("user_phone", userPhone)
-    .eq("answer", "active")
     .like("question", `${LAST_MEMORY_ANSWER_PREFIX}%`)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -668,8 +669,23 @@ export async function getLatestMemoryAnswerContext(userPhone: string) {
 
   return {
     documentId: data.document_id as string,
-    question: (data.question as string).slice(LAST_MEMORY_ANSWER_PREFIX.length)
+    question: (data.question as string).slice(LAST_MEMORY_ANSWER_PREFIX.length),
+    answer: latestAnswerContextText(data.answer as string | null)
   };
+}
+
+export async function rewriteLatestMemoryAnswerProfessionally(input: {
+  userPhone: string;
+  targetLanguage: "en" | "es";
+}) {
+  const context = await getLatestMemoryAnswerContext(input.userPhone);
+  if (!context?.answer) return null;
+
+  return rewriteAnswerProfessionallyWithOpenAI({
+    question: context.question,
+    answer: context.answer,
+    targetLanguage: input.targetLanguage
+  });
 }
 
 export async function getLatestMemoryDocumentReference(userPhone: string) {
@@ -1216,6 +1232,17 @@ function shouldUseOriginalDocumentFirst(question: string) {
   return /\b(where|what page|which page|page number|location|locate|find the line|where does it say|where does it mention|where in|donde|dónde|en que pagina|en qué página|pagina|página|donde dice|dónde dice|donde menciona|dónde menciona|ubicacion|ubicación|seccion|sección)\b/.test(
     normalizedQuestion
   );
+}
+
+function latestAnswerContextText(answer: string | null) {
+  if (!answer || answer === "active") return null;
+
+  try {
+    const parsed = JSON.parse(answer) as { answer?: unknown };
+    return typeof parsed.answer === "string" ? parsed.answer : null;
+  } catch {
+    return null;
+  }
 }
 
 function shouldRetryQuestionWithOriginalDocument(answer: string, question: string) {

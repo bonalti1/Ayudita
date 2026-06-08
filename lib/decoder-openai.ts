@@ -7,7 +7,8 @@ import {
   EXTRACT_MODEL,
   FULL_DOCUMENT_FOLLOW_UP_PROMPT,
   EXTRACTION_PROMPT,
-  FOLLOW_UP_PROMPT
+  FOLLOW_UP_PROMPT,
+  PROFESSIONAL_REWRITE_PROMPT
 } from "./decoder-prompts";
 import type { DecoderExplanation, DecoderFact } from "./decoder-types";
 
@@ -202,6 +203,41 @@ export async function answerFullDocumentQuestionWithOpenAI(input: {
   }
 
   return { body, model: EXTRACT_MODEL };
+}
+
+export async function rewriteAnswerProfessionallyWithOpenAI(input: {
+  question: string;
+  answer: string;
+  targetLanguage: "en" | "es";
+}): Promise<{ body: string; model: string }> {
+  const client = createOpenAIClient();
+
+  const response = await client.responses.create({
+    model: EXPLAIN_MODEL,
+    instructions: PROFESSIONAL_REWRITE_PROMPT,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              target_language: input.targetLanguage,
+              question: input.question,
+              previous_answer: input.answer
+            })
+          }
+        ]
+      }
+    ]
+  });
+
+  const body = sanitizeDecisionLanguage(response.output_text?.trim() ?? "", input.targetLanguage);
+  if (!body) {
+    throw new Error("OpenAI returned an empty professional rewrite response.");
+  }
+
+  return { body, model: EXPLAIN_MODEL };
 }
 
 function sanitizeDecisionLanguage(body: string, language: "en" | "es") {
