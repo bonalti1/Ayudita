@@ -105,6 +105,32 @@ type TrustedAnswerMemoryAction =
   | { action: "rename"; documentId: string; alias: string }
   | { action: "disable"; documentId: string; reason?: string }
   | { action: "set_primary"; documentId: string; trustedAnswerId: string };
+type SourceQaReport = {
+  generated_at: string;
+  summary: {
+    total: number;
+    pass: number;
+    warn: number;
+    fail: number;
+  };
+  source_counts: {
+    total: number;
+    drive: number;
+    whatsapp: number;
+    uploads: number;
+    remembered: number;
+    failed: number;
+    contract_like: number;
+    contract_classified: number;
+  };
+  checks: Array<{
+    id: string;
+    title: string;
+    status: "pass" | "warn" | "fail";
+    detail: string;
+    customerImpact: string;
+  }>;
+};
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -117,6 +143,7 @@ function Icon({ children }: { children: React.ReactNode }) {
 export default function Home() {
   const [documents, setDocuments] = useState<DecoderDocumentSummary[]>([]);
   const [trustedAnswers, setTrustedAnswers] = useState<TrustedAnswerGroup[]>([]);
+  const [sourceQaReport, setSourceQaReport] = useState<SourceQaReport | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<DecoderDocumentDetail | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -137,12 +164,14 @@ export default function Home() {
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isTrustedAnswersLoading, setIsTrustedAnswersLoading] = useState(true);
+  const [isSourceQaLoading, setIsSourceQaLoading] = useState(true);
   const isSpanish = uiLanguage === "es";
   const ui = (english: string, spanish: string) => (isSpanish ? spanish : english);
 
   useEffect(() => {
     refreshDocuments();
     refreshTrustedAnswers();
+    refreshSourceQa();
   }, []);
 
   useEffect(() => {
@@ -181,6 +210,17 @@ export default function Home() {
       setTrustedAnswers(data.trusted_answers);
     } finally {
       setIsTrustedAnswersLoading(false);
+    }
+  }
+
+  async function refreshSourceQa() {
+    setIsSourceQaLoading(true);
+    try {
+      const response = await fetch("/api/source-qa");
+      if (!response.ok) return;
+      setSourceQaReport((await response.json()) as SourceQaReport);
+    } finally {
+      setIsSourceQaLoading(false);
     }
   }
 
@@ -663,6 +703,13 @@ export default function Home() {
                     setActiveView("documents");
                     setSelectedId(documentId);
                   }}
+                />
+
+                <SourceQaPanel
+                  report={sourceQaReport}
+                  language={uiLanguage}
+                  isLoading={isSourceQaLoading}
+                  onRun={refreshSourceQa}
                 />
 
                 <section className="panel command-panel">
@@ -1167,6 +1214,97 @@ function SourceLabPanel({
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function SourceQaPanel({
+  report,
+  language,
+  isLoading,
+  onRun
+}: {
+  report: SourceQaReport | null;
+  language: UiLanguage;
+  isLoading: boolean;
+  onRun: () => void;
+}) {
+  const isSpanish = language === "es";
+  const healthScore = report
+    ? Math.round(((report.summary.pass + report.summary.warn * 0.5) / Math.max(1, report.summary.total)) * 100)
+    : 0;
+  const topChecks = report?.checks.slice(0, 5) ?? [];
+
+  return (
+    <section className="panel command-panel source-qa">
+      <div className="panel-header">
+        <div>
+          <h2>{isSpanish ? "Source QA" : "Source QA"}</h2>
+          <p>
+            {isSpanish
+              ? "Pruebas rapidas para encontrar respuestas malas antes que el cliente las vea."
+              : "Fast tests to catch bad answers before the customer sees them."}
+          </p>
+        </div>
+        <button className="small-button" onClick={onRun} disabled={isLoading}>
+          {isLoading ? (isSpanish ? "Corriendo..." : "Running...") : (isSpanish ? "Correr QA" : "Run QA")}
+        </button>
+      </div>
+
+      {isLoading && !report ? (
+        <div className="empty-state">{isSpanish ? "Corriendo Source QA..." : "Running Source QA..."}</div>
+      ) : null}
+
+      {report ? (
+        <>
+          <div className="source-qa-score">
+            <div>
+              <strong>{healthScore}%</strong>
+              <span>{isSpanish ? "health score" : "health score"}</span>
+            </div>
+            <div className="source-qa-pill-row">
+              <span className="qa-pill pass">{report.summary.pass} {isSpanish ? "pass" : "pass"}</span>
+              <span className="qa-pill warn">{report.summary.warn} {isSpanish ? "warn" : "warn"}</span>
+              <span className="qa-pill fail">{report.summary.fail} {isSpanish ? "fail" : "fail"}</span>
+            </div>
+          </div>
+
+          <div className="source-qa-grid" aria-label={isSpanish ? "Cobertura QA" : "QA coverage"}>
+            <div>
+              <strong>{report.source_counts.total}</strong>
+              <span>{isSpanish ? "fuentes" : "sources"}</span>
+            </div>
+            <div>
+              <strong>{report.source_counts.remembered}</strong>
+              <span>{isSpanish ? "recordadas" : "remembered"}</span>
+            </div>
+            <div>
+              <strong>{report.source_counts.contract_like}</strong>
+              <span>{isSpanish ? "contratos" : "contract-like"}</span>
+            </div>
+            <div>
+              <strong>{report.source_counts.drive}</strong>
+              <span>Drive</span>
+            </div>
+          </div>
+
+          <div className="source-qa-list">
+            {topChecks.map((check) => (
+              <div className="source-qa-check" key={check.id}>
+                <div className={`qa-status-dot ${check.status}`} />
+                <div>
+                  <div className="source-qa-check-head">
+                    <strong>{check.title}</strong>
+                    <span className={`qa-pill ${check.status}`}>{check.status}</span>
+                  </div>
+                  <p>{check.detail}</p>
+                  <span>{check.customerImpact}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
