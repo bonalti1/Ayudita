@@ -389,8 +389,7 @@ export async function findWhatsAppMemoryDocuments(input: {
   const documents = await listDecoderDocuments();
   const candidates = documents.filter(
     (document) =>
-      document.source === "whatsapp" &&
-      document.user_phone === input.userPhone &&
+      isSearchableForWhatsAppMemory(document, input.userPhone) &&
       (document.status === "extracted" || document.status === "explained")
   );
 
@@ -424,6 +423,14 @@ export async function findWhatsAppMemoryDocuments(input: {
     .map((match) => match.document);
 
   return dedupeMemoryDocuments(input.query, matches).slice(0, input.limit ?? 3);
+}
+
+function isSearchableForWhatsAppMemory(
+  document: DecoderDocumentSummary,
+  userPhone: string
+) {
+  if (document.source === "whatsapp") return document.user_phone === userPhone;
+  return document.source === "drive";
 }
 
 export async function answerDecoderDocumentQuestion(input: {

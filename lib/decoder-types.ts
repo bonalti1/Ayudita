@@ -1,6 +1,6 @@
 export type DocumentStatus = "received" | "extracted" | "explained" | "failed";
 export type ReviewStatus = "pending" | "reviewed" | "flagged";
-export type DocumentSource = "whatsapp" | "web";
+export type DocumentSource = "whatsapp" | "web" | "drive";
 
 export type DecoderDocument = {
   id: string;

@@ -496,6 +496,17 @@ svg {
   min-width: 152px;
 }
 
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.source-actions .secondary {
+  min-width: 146px;
+}
+
 .upload-button.disabled {
   opacity: 0.62;
   pointer-events: none;

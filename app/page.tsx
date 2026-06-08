@@ -48,7 +48,7 @@ const iconPaths = {
   )
 };
 
-type Filter = "all" | "memory" | "credentials" | "whatsapp" | "disabled" | DocumentStatus;
+type Filter = "all" | "memory" | "credentials" | "whatsapp" | "drive" | "disabled" | DocumentStatus;
 type UiLanguage = "en" | "es";
 type ActiveView = "command" | "memory" | "documents";
 type MemoryQueryResult = {
@@ -122,6 +122,7 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("all");
   const [activeView, setActiveView] = useState<ActiveView>("command");
   const [uploadStatus, setUploadStatus] = useState("");
+  const [driveImportStatus, setDriveImportStatus] = useState("");
   const [memoryQuestion, setMemoryQuestion] = useState("What is my office WiFi password?");
   const [memoryAnswer, setMemoryAnswer] = useState<MemoryQueryResult | null>(null);
   const [memoryAskStatus, setMemoryAskStatus] = useState("");
@@ -130,6 +131,7 @@ export default function Home() {
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockStatus, setUnlockStatus] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isImportingDrive, setIsImportingDrive] = useState(false);
   const [isAskingMemory, setIsAskingMemory] = useState(false);
   const [isManagingMemory, setIsManagingMemory] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -291,6 +293,44 @@ export default function Home() {
     }
   }
 
+  async function importGoogleDriveFolder() {
+    setIsImportingDrive(true);
+    setDriveImportStatus(ui("Importing Google Drive folder...", "Importando carpeta de Google Drive..."));
+
+    try {
+      const response = await fetch("/api/drive/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 10, userPhone: "drive-import" })
+      });
+      const data = (await response.json().catch(() => null)) as {
+        imported?: { documentId: string }[];
+        skipped?: { reason: string }[];
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        setDriveImportStatus(data?.error ?? ui("Could not import Google Drive.", "No se pudo importar Google Drive."));
+        return;
+      }
+
+      const importedCount = data?.imported?.length ?? 0;
+      const skippedCount = data?.skipped?.length ?? 0;
+      setDriveImportStatus(
+        ui(
+          `Drive import complete: ${importedCount} new, ${skippedCount} skipped.`,
+          `Importacion de Drive completa: ${importedCount} nuevos, ${skippedCount} omitidos.`
+        )
+      );
+      await refreshDocuments(data?.imported?.[0]?.documentId);
+      await refreshTrustedAnswers();
+    } catch {
+      setDriveImportStatus(ui("Could not import Google Drive.", "No se pudo importar Google Drive."));
+    } finally {
+      setIsImportingDrive(false);
+    }
+  }
+
   async function askMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = memoryQuestion.trim();
@@ -347,6 +387,7 @@ export default function Home() {
       if (filter === "memory") return hasUsefulMemoryAlias(document) && !document.memory_disabled;
       if (filter === "credentials") return Boolean(document.has_credential_facts);
       if (filter === "whatsapp") return document.source === "whatsapp";
+      if (filter === "drive") return document.source === "drive";
       if (filter === "disabled") return Boolean(document.memory_disabled);
       return document.status === filter;
     });
@@ -473,21 +514,28 @@ export default function Home() {
             <div className="upload-copy">
               <Icon>{iconPaths.upload}</Icon>
               <div>
-                <h2>{ui("Upload document", "Subir documento")}</h2>
-                <p>{ui("JPG, PNG, WebP, or PDF. Maximum 20 MB.", "JPG, PNG, WebP o PDF. Máximo 20 MB.")}</p>
+                <h2>{ui("Add source material", "Agregar fuentes")}</h2>
+                <p>{ui("Upload one file or import the configured Google Drive folder.", "Sube un archivo o importa la carpeta configurada de Google Drive.")}</p>
               </div>
             </div>
-            <label className={`primary upload-button ${isUploading ? "disabled" : ""}`}>
-              <Icon>{iconPaths.upload}</Icon>
-              {isUploading ? ui("Uploading...", "Subiendo...") : ui("Choose file", "Elegir archivo")}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
-                onChange={uploadDocument}
-                disabled={isUploading}
-              />
-            </label>
+            <div className="source-actions">
+              <label className={`primary upload-button ${isUploading ? "disabled" : ""}`}>
+                <Icon>{iconPaths.upload}</Icon>
+                {isUploading ? ui("Uploading...", "Subiendo...") : ui("Choose file", "Elegir archivo")}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={uploadDocument}
+                  disabled={isUploading}
+                />
+              </label>
+              <button className="secondary" type="button" onClick={importGoogleDriveFolder} disabled={isImportingDrive}>
+                <Icon>{iconPaths.inbox}</Icon>
+                {isImportingDrive ? ui("Importing...", "Importando...") : ui("Import Drive", "Importar Drive")}
+              </button>
+            </div>
             {uploadStatus ? <span className="upload-status">{uploadStatus}</span> : null}
+            {driveImportStatus ? <span className="upload-status">{driveImportStatus}</span> : null}
           </section>
 
           <section className="ask-card memory-ask-card" aria-label={ui("Ask Ayudita memory", "Preguntar a memoria de Ayudita")}>
@@ -735,6 +783,7 @@ export default function Home() {
                       ["memory", ui("Memory", "Memoria")],
                       ["credentials", ui("Credentials", "Credenciales")],
                       ["whatsapp", "WhatsApp"],
+                      ["drive", "Drive"],
                       ["received", ui("Saved", "Guardado")],
                       ["disabled", ui("Do not search", "No buscar")],
                       ["failed", ui("Failed", "Falló")]
@@ -1467,7 +1516,9 @@ function factImportance(fact: { fact_type: string; label: string | null }) {
 }
 
 function sourceLabel(source: string) {
-  return source === "whatsapp" ? "WhatsApp" : "Web";
+  if (source === "whatsapp") return "WhatsApp";
+  if (source === "drive") return "Drive";
+  return "Web";
 }
 
 function statusLabel(status: DocumentStatus, _reviewStatus: ReviewStatus, language: UiLanguage) {

@@ -10,5 +10,8 @@ export const env = {
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
   whatsappGraphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0",
-  ayuditaReviewPassword: process.env.AYUDITA_REVIEW_PASSWORD
+  ayuditaReviewPassword: process.env.AYUDITA_REVIEW_PASSWORD,
+  googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
+  googleDriveServiceAccountEmail: process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL,
+  googleDrivePrivateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY
 };
