@@ -5,6 +5,7 @@ import {
   EXPLAIN_MODEL,
   EXPLANATION_PROMPT,
   EXTRACT_MODEL,
+  FULL_DOCUMENT_FOLLOW_UP_PROMPT,
   EXTRACTION_PROMPT,
   FOLLOW_UP_PROMPT
 } from "./decoder-prompts";
@@ -145,6 +146,62 @@ export async function answerFollowUpWithOpenAI(input: {
   }
 
   return { body, model: EXPLAIN_MODEL };
+}
+
+export async function answerFullDocumentQuestionWithOpenAI(input: {
+  bytes: ArrayBuffer;
+  mimeType: string;
+  fileName: string;
+  question: string;
+  targetLanguage: "en" | "es";
+  facts: DecoderFact[];
+  explanations: DecoderExplanation[];
+}): Promise<{ body: string; model: string }> {
+  const client = createOpenAIClient();
+  const base64 = Buffer.from(input.bytes).toString("base64");
+  const content = buildInputContent(input.mimeType, base64, input.fileName);
+  const matchingExplanations = input.explanations.filter(
+    (explanation) => explanation.language === input.targetLanguage
+  );
+
+  const response = await client.responses.create({
+    model: EXTRACT_MODEL,
+    instructions: FULL_DOCUMENT_FOLLOW_UP_PROMPT,
+    input: [
+      {
+        role: "user",
+        content: [
+          ...content,
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              question: input.question,
+              target_language: input.targetLanguage,
+              saved_facts: input.facts.map((fact) => ({
+                fact_type: fact.fact_type,
+                label: fact.label,
+                fact_value: fact.fact_value,
+                provenance_type: fact.provenance_type,
+                source_text: fact.source_text,
+                page_number: fact.page_number
+              })),
+              saved_explanations: matchingExplanations.map((explanation) => ({
+                language: explanation.language,
+                body: explanation.body
+              }))
+            })
+          }
+        ]
+      }
+    ]
+  });
+
+  const body = sanitizeDecisionLanguage(response.output_text?.trim() ?? "", input.targetLanguage);
+  if (!body) {
+    throw new Error("OpenAI returned an empty full-document follow-up response.");
+  }
+
+  return { body, model: EXTRACT_MODEL };
 }
 
 function sanitizeDecisionLanguage(body: string, language: "en" | "es") {

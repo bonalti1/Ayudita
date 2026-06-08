@@ -10,6 +10,7 @@ import type {
 import type { DecoderExtraction } from "./decoder-extraction-schema";
 import {
   answerFollowUpWithOpenAI,
+  answerFullDocumentQuestionWithOpenAI,
   explainFactsWithOpenAI,
   extractFactsWithOpenAI
 } from "./decoder-openai";
@@ -432,12 +433,33 @@ export async function answerDecoderDocumentQuestion(input: {
     return null;
   }
 
-  const { body, model } = await answerFollowUpWithOpenAI({
+  let { body, model } = await answerFollowUpWithOpenAI({
     question: input.question,
     targetLanguage: detectQuestionLanguage(input.question),
     facts: document.facts,
     explanations: document.explanations
   });
+
+  if (shouldRetryQuestionWithOriginalDocument(body, input.question)) {
+    const { data: file, error: downloadError } = await createSupabaseServiceClient().storage
+      .from(RAW_DOCUMENTS_BUCKET)
+      .download(document.storage_path);
+
+    if (!downloadError && file) {
+      const fullDocumentAnswer = await answerFullDocumentQuestionWithOpenAI({
+        bytes: await file.arrayBuffer(),
+        mimeType: document.mime_type ?? "image/jpeg",
+        fileName: document.storage_path.split("/").pop() ?? "document",
+        question: input.question,
+        targetLanguage: detectQuestionLanguage(input.question),
+        facts: document.facts,
+        explanations: document.explanations
+      });
+
+      body = fullDocumentAnswer.body;
+      model = fullDocumentAnswer.model;
+    }
+  }
 
   await logUserQuestion({
     documentId: document.id,
@@ -1160,6 +1182,24 @@ function detectQuestionLanguage(question: string): "en" | "es" {
 
   if (englishSignals.test(normalized) && !spanishSignals.test(normalized)) return "en";
   return "es";
+}
+
+function shouldRetryQuestionWithOriginalDocument(answer: string, question: string) {
+  const normalizedAnswer = normalizeSearchText(answer);
+  const normalizedQuestion = normalizeSearchText(question);
+
+  const saysMissing =
+    /\b(not mention|does not mention|doesn t mention|not found|not in the facts|not in the extracted|no menciona|no se menciona|no se encuentra|no encontre|no esta en los datos|no aparece)\b/.test(
+      normalizedAnswer
+    );
+
+  if (!saysMissing) return false;
+
+  return (
+    /\b(count|how many|cuantos|cuantas|cantidad|number|numero|mentions|menciona|design|ceiling|techo|techos|cathedral|catedral|catedrales|contract|contrato|clause|clausula|item|linea)\b/.test(
+      normalizedQuestion
+    ) || normalizedQuestion.split(/\s+/).length >= 4
+  );
 }
 
 function scoreMemoryDocument(
