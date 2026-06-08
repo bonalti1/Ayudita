@@ -231,7 +231,7 @@ export async function extractDecoderDocument(documentId: string): Promise<Decode
     fileName: document.storage_path.split("/").pop() ?? "document"
   });
 
-  await storeExtraction(document.id, extraction, model);
+  await storeExtraction(document.id, enhanceExtraction(extraction), model);
 
   const extractedDocument = await getDecoderDocument(document.id);
   if (!extractedDocument) {
@@ -507,7 +507,7 @@ async function answerQuestionFromOriginalDocument(
     question,
     targetLanguage,
     documentType: document.document_type,
-    documentCategory: document.document_category,
+    documentCategory: isContractDocument(document) ? "contract" : document.document_category,
     facts: document.facts,
     explanations: document.explanations
   });
@@ -1232,6 +1232,57 @@ function documentTypeTitle(extraction: DecoderExtraction) {
   return categoryLabel(extraction.document_category);
 }
 
+function enhanceExtraction(extraction: DecoderExtraction): DecoderExtraction {
+  const corpus = normalizeSearchText(
+    [
+      extraction.document_category,
+      extraction.document_type.value,
+      extraction.document_type.source_text,
+      extraction.detected_purpose.value,
+      extraction.detected_purpose.source_text,
+      extraction.extraction_notes,
+      ...extraction.general_facts.flatMap((fact) => [fact.label, fact.value, fact.source_text])
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  if (
+    (extraction.document_category === "unclear" || extraction.document_category === "other") &&
+    looksLikeContractCorpus(corpus)
+  ) {
+    return {
+      ...extraction,
+      document_category: "contract",
+      document_type: extraction.document_type.value
+        ? extraction.document_type
+        : {
+            value: "Construction Contract",
+            provenance: "INFERRED",
+            source_text: extraction.document_type.source_text
+          },
+      extraction_notes: extraction.extraction_notes
+        ? `${extraction.extraction_notes} Auto-classified as contract from construction contract terms.`
+        : "Auto-classified as contract from construction contract terms."
+    };
+  }
+
+  return extraction;
+}
+
+function looksLikeContractCorpus(corpus: string) {
+  if (/\b(contract|agreement|contrato|acuerdo)\b/.test(corpus)) return true;
+
+  let score = 0;
+  if (/\b(residential construction|construction|construccion|construcción)\b/.test(corpus)) score += 2;
+  if (/\b(builder|contractor|owner|cliente|constructor|contratista|dueno|dueño)\b/.test(corpus)) score += 2;
+  if (/\b(scope of work|scope|allowance|allowances|alcance)\b/.test(corpus)) score += 2;
+  if (/\b(change order|warranty|signature|signatures|orden de cambio|garantia|garantía|firma|firmas)\b/.test(corpus)) score += 2;
+  if (/\b(ceiling|ceilings|cathedral|design|designs|techo|techos|catedral|diseno|diseño|diseños)\b/.test(corpus)) score += 1;
+
+  return score >= 4;
+}
+
 function categoryLabel(category: string) {
   return category
     .split("_")
@@ -1271,8 +1322,30 @@ function shouldUseOriginalDocumentFirst(question: string, document: DecoderDocum
 }
 
 function isContractDocument(document: DecoderDocumentDetail) {
-  return /\b(contract|agreement|contrato|acuerdo)\b/.test(
-    normalizeSearchText(`${document.document_type ?? ""} ${document.document_category ?? ""}`)
+  const corpus = normalizeDocumentSignalText(document);
+
+  if (/\b(contract|agreement|contrato|acuerdo)\b/.test(corpus)) return true;
+
+  return /\b(residential construction|construction contract|builder|contractor|owner|scope of work|allowance|allowances|change order|warranty|signature|signatures|constructor|contratista|dueno|dueño|alcance|orden de cambio|garantia|garantía|firma|firmas)\b/.test(
+    corpus
+  );
+}
+
+function normalizeDocumentSignalText(document: DecoderDocumentDetail) {
+  return normalizeSearchText(
+    [
+      document.document_type,
+      document.document_category,
+      document.storage_path,
+      ...document.facts.flatMap((fact) => [
+        fact.fact_type,
+        fact.label,
+        fact.fact_value,
+        fact.source_text
+      ])
+    ]
+      .filter(Boolean)
+      .join(" ")
   );
 }
 
@@ -1373,6 +1446,10 @@ function scoreMemoryDocument(
 
   if (/\b(wifi|wi fi|network|password|contrasena|contraseña|red)\b/.test(normalizedQuery) && /\b(wifi|wi fi|network|password|contrasena|contraseña|ssid|red)\b/.test(corpus)) {
     score += 4;
+  }
+
+  if (looksLikeContractQuestion(normalizedQuery) && /\b(contract|agreement|construction|builder|allowance|scope|ceiling|cathedral|design|contrato|acuerdo|construccion|constructor|alcance|techo|catedral|diseno|diseño)\b/.test(corpus)) {
+    score += 7;
   }
 
   return score;

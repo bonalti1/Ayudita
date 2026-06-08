@@ -44,12 +44,14 @@ export async function querySavedMemory(input: {
   isUnlocked?: boolean;
 }): Promise<MemoryQueryResult> {
   const question = input.question.trim();
-  const trustedResult = await queryTrustedAnswerMemory({
-    question,
-    userPhone: input.userPhone,
-    isUnlocked: input.isUnlocked
-  });
-  if (trustedResult) return trustedResult;
+  if (!looksLikeDeepDocumentQuestion(question)) {
+    const trustedResult = await queryTrustedAnswerMemory({
+      question,
+      userPhone: input.userPhone,
+      isUnlocked: input.isUnlocked
+    });
+    if (trustedResult) return trustedResult;
+  }
 
   const summaries = await listDecoderDocuments();
   const memorySummaries = summaries
@@ -82,6 +84,28 @@ export async function querySavedMemory(input: {
 
   const sanitizedDocument = sanitizeDocumentDetail(best.document, Boolean(input.isUnlocked));
   const duplicateCount = countDuplicateSources(best.document, documents);
+
+  if (looksLikeDeepDocumentQuestion(question) && !looksLikeCredentialQuestion(question)) {
+    return {
+      answer: null,
+      confidence: best.score >= 10 ? "medium" : "low",
+      answer_source: "document",
+      duplicate_source_count: duplicateCount,
+      message: "I found a likely source, but this question needs the original document instead of a single saved fact.",
+      document: {
+        id: sanitizedDocument.id,
+        title: sanitizedDocument.document_type ?? sanitizedDocument.document_category ?? "Saved document",
+        source: sanitizedDocument.source,
+        mime_type: sanitizedDocument.mime_type,
+        created_at: sanitizedDocument.created_at,
+        memory_aliases: sanitizedDocument.memory_aliases ?? [],
+        has_sensitive_info: sanitizedDocument.has_sensitive_info,
+        sensitive_info_locked: sanitizedDocument.sensitive_info_locked
+      },
+      fact: null
+    };
+  }
+
   const answerFact = findSanitizedFact(best.answerFact, sanitizedDocument);
 
   return {
@@ -272,6 +296,7 @@ function rankMemoryCandidate(question: string, document: DecoderDocumentDetail):
   if (answerFact) score += 5;
   if (document.memory_aliases?.some((alias) => includesAny(alias, questionTokens))) score += 3;
   if (document.has_credential_facts && looksLikeCredentialQuestion(question)) score += 4;
+  if (looksLikeContractQuestion(question) && looksLikeContractDocument(document)) score += 8;
 
   return { document, score, answerFact };
 }
@@ -341,6 +366,43 @@ function findSanitizedFact(target: DecoderFact | null, document: DecoderDocument
 
 function looksLikeCredentialQuestion(question: string) {
   return includesAny(question, ["password", "wifi", "wi-fi", "network", "credential", "login", "code"]);
+}
+
+function looksLikeDeepDocumentQuestion(question: string) {
+  const normalized = normalizeForMatch(question);
+  return /\b(where|what page|which page|location|locate|where does it say|where does it mention|donde|pagina|página|donde dice|donde menciona|ubicacion|ubicación|seccion|sección|contract|contrato|agreement|allowance|allowances|ceiling|ceilings|cathedral|design|designs|techo|techos|catedral|diseno|diseño|diseños|scope|included|excluded|incluye|excluye)\b/.test(
+    normalized
+  );
+}
+
+function looksLikeContractQuestion(question: string) {
+  const normalized = normalizeForMatch(question);
+  return /\b(contract|contrato|agreement|acuerdo|allowance|allowances|scope|included|excluded|ceiling|ceilings|cathedral|design|designs|builder|owner|change order|warranty|contratista|constructor|alcance|incluye|excluye|techo|techos|catedral|diseno|diseño|diseños|garantia|garantía)\b/.test(
+    normalized
+  );
+}
+
+function looksLikeContractDocument(document: DecoderDocumentDetail) {
+  const corpus = normalizeForMatch(
+    [
+      document.document_type,
+      document.document_category,
+      document.storage_path,
+      ...document.facts.flatMap((fact) => [
+        fact.fact_type,
+        fact.label,
+        fact.fact_value,
+        fact.source_text
+      ])
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  if (/\b(contract|agreement|contrato|acuerdo)\b/.test(corpus)) return true;
+  return /\b(construction|builder|contractor|owner|scope|allowance|warranty|signature|construccion|constructor|contratista|dueno|dueño|alcance|garantia|garantía|firma)\b/.test(
+    corpus
+  );
 }
 
 function tokenize(value: string) {
