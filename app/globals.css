@@ -823,6 +823,48 @@ svg {
   line-height: 1.4;
 }
 
+.answer-mode-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.answer-mode-preview.compact {
+  margin-top: 10px;
+  padding: 0;
+}
+
+.answer-mode-button {
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 9px 8px;
+  border: 1px solid rgba(18, 135, 90, 0.18);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--green);
+  text-align: center;
+}
+
+.answer-mode-preview.compact .answer-mode-button {
+  min-height: 36px;
+  padding: 7px 8px;
+}
+
+.answer-mode-button strong {
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.answer-mode-button span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1597,6 +1639,7 @@ svg {
   }
 
   .command-stats,
+  .answer-mode-preview,
   .mini-grid,
   .metric-strip {
     grid-template-columns: 1fr;

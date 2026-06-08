@@ -686,29 +686,30 @@ export default function Home() {
                 <section className="panel command-panel">
                   <div className="panel-header">
                     <div>
-                      <h2>{ui("Memory Confidence", "Confianza de memoria")}</h2>
+                      <h2>{ui("Answer Experience", "Experiencia de respuesta")}</h2>
                       <p>
                         {ui(
-                          "Best experience rule: answer fast, then offer proof.",
-                          "Regla de mejor experiencia: contestar rápido y luego ofrecer prueba."
+                          "Best experience rule: answer fast, then guide the next move.",
+                          "Regla de mejor experiencia: contestar rápido y guiar el siguiente paso."
                         )}
                       </p>
                     </div>
                   </div>
                   <div className="trust-steps">
                     <div>
-                      <strong>{ui("1. Answer from memory", "1. Contestar desde memoria")}</strong>
-                      <span>{ui("Use saved labels, credential facts, and recent source matches.", "Usar etiquetas guardadas, credenciales y fuentes recientes.")}</span>
+                      <strong>{ui("1. Answer simply", "1. Contestar simple")}</strong>
+                      <span>{ui("Use 10th-grade language so the customer understands fast.", "Usar lenguaje simple para que el cliente entienda rápido.")}</span>
                     </div>
                     <div>
-                      <strong>{ui("2. Show why it is trusted", "2. Mostrar por qué se confía")}</strong>
-                      <span>{ui("Reference the source document and exact saved fact.", "Referenciar el documento fuente y el fact guardado.")}</span>
+                      <strong>{ui("2. Keep proof one tap away", "2. Prueba a un toque")}</strong>
+                      <span>{ui("The original image, PDF, or file stays available after the answer.", "La imagen, PDF o archivo original sigue disponible después de responder.")}</span>
                     </div>
                     <div>
-                      <strong>{ui("3. Offer the original", "3. Ofrecer el original")}</strong>
-                      <span>{ui("Let the user ask for the image, PDF, or document when they want proof.", "Dejar que el usuario pida imagen, PDF o documento cuando quiera prueba.")}</span>
+                      <strong>{ui("3. Offer useful modes", "3. Ofrecer modos útiles")}</strong>
+                      <span>{ui("Proof, Professional, and More detail turn one answer into a complete workflow.", "Prueba, Profesional y Mas detalle convierten una respuesta en un flujo completo.")}</span>
                     </div>
                   </div>
+                  <AnswerModePreview language={uiLanguage} />
                 </section>
               </aside>
             </section>
@@ -945,23 +946,24 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>{ui("Best Answer Pattern", "Mejor patrón de respuesta")}</h2>
-                    <p>{ui("Simple, trusted, and source-backed.", "Simple, confiable y respaldado por fuente.")}</p>
+                    <p>{ui("Simple answer, proof, professional rewrite, or more detail.", "Respuesta simple, prueba, versión profesional o más detalle.")}</p>
                   </div>
                 </div>
                 <div className="trust-steps">
                   <div>
-                    <strong>{ui("Answer directly", "Contestar directo")}</strong>
+                    <strong>{ui("Answer simply", "Contestar simple")}</strong>
                     <span>{ui("Use the remembered fact when the match is clear.", "Usar el fact recordado cuando la coincidencia esté clara.")}</span>
                   </div>
                   <div>
-                    <strong>{ui("Name the source", "Nombrar la fuente")}</strong>
-                    <span>{ui("Say which image, PDF, or saved document supports the answer.", "Decir qué imagen, PDF o documento guardado respalda la respuesta.")}</span>
+                    <strong>{ui("Offer the action menu", "Ofrecer menú de acciones")}</strong>
+                    <span>{ui("Proof, Professional, and More detail help the customer choose what they need next.", "Prueba, Profesional y Mas detalle ayudan al cliente a escoger lo que necesita después.")}</span>
                   </div>
                   <div>
-                    <strong>{ui("Offer the original", "Ofrecer el original")}</strong>
-                    <span>{ui("Let the user request the actual image or document for confidence.", "Permitir que el usuario pida la imagen o documento real para confianza.")}</span>
+                    <strong>{ui("Keep trust visible", "Mantener confianza visible")}</strong>
+                    <span>{ui("The original source can always be sent back when the user wants confidence.", "La fuente original siempre se puede mandar cuando el usuario quiere confianza.")}</span>
                   </div>
                 </div>
+                <AnswerModePreview language={uiLanguage} />
               </section>
 
               <section className="panel side-stack">
@@ -979,9 +981,10 @@ export default function Home() {
                   <div className="thread-row">
                     <div className="bubble ai">
                       {ui(
-                        "The office WiFi password is saved from your Wi-Fi settings screenshot. Do you want me to send the original image too?",
-                        "El password del WiFi de oficina está guardado desde tu screenshot de configuración. ¿Quieres que te mande la imagen original también?"
+                        "The office WiFi password is westswitch551. Source: Wi-Fi Settings Screenshot.",
+                        "El password del WiFi de oficina es westswitch551. Fuente: Wi-Fi Settings Screenshot."
                       )}
+                      <AnswerModePreview language={uiLanguage} compact />
                     </div>
                     <span className="thread-time">{ui("Trusted answer", "Respuesta confiable")}</span>
                   </div>
@@ -1001,6 +1004,35 @@ function InfoField({ label, value }: { label: string; value: string }) {
     <div className="field">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function AnswerModePreview({ language, compact = false }: { language: UiLanguage; compact?: boolean }) {
+  const isSpanish = language === "es";
+  const modes = [
+    {
+      label: isSpanish ? "Prueba" : "Proof",
+      detail: isSpanish ? "manda el original" : "send original"
+    },
+    {
+      label: isSpanish ? "Profesional" : "Professional",
+      detail: isSpanish ? "redacta para reenviar" : "rewrite to forward"
+    },
+    {
+      label: isSpanish ? "Mas detalle" : "More detail",
+      detail: isSpanish ? "explica mejor" : "explain more"
+    }
+  ];
+
+  return (
+    <div className={`answer-mode-preview ${compact ? "compact" : ""}`} aria-label={isSpanish ? "Modos de respuesta" : "Answer modes"}>
+      {modes.map((mode) => (
+        <div className="answer-mode-button" key={mode.label}>
+          <strong>{mode.label}</strong>
+          {!compact ? <span>{mode.detail}</span> : null}
+        </div>
+      ))}
     </div>
   );
 }
