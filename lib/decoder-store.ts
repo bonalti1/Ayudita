@@ -31,6 +31,8 @@ const PENDING_SOURCE_DOCUMENT_PREFIX = "whatsapp:pending_source_document:";
 const LAST_MEMORY_DOCUMENT_PREFIX = "whatsapp:last_memory_document:";
 const LAST_MEMORY_ANSWER_PREFIX = "whatsapp:last_memory_answer:";
 const TRUSTED_ANSWER_PRIMARY_PREFIX = "trusted_answer:primary:";
+const SHORT_CONTEXT_TTL_MS = 30 * 60 * 1000;
+const SOURCE_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
 
 type CreateRawDocumentInput = {
   bytes: ArrayBuffer;
@@ -586,7 +588,7 @@ export async function getLatestPendingMemorySearch(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("id, question")
+    .select("id, question, created_at")
     .eq("user_phone", userPhone)
     .eq("answer", "pending_clarification")
     .like("question", `${PENDING_MEMORY_SEARCH_PREFIX}%`)
@@ -596,6 +598,10 @@ export async function getLatestPendingMemorySearch(userPhone: string) {
 
   if (error) throw error;
   if (!data) return null;
+  if (isExpiredContext(data.created_at as string | null, SHORT_CONTEXT_TTL_MS)) {
+    await resolvePendingMemorySearch(data.id as string, "expired");
+    return null;
+  }
 
   return {
     id: data.id as string,
@@ -657,7 +663,7 @@ export async function getLatestMemoryAnswerContext(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("document_id, question, answer")
+    .select("document_id, question, answer, created_at")
     .eq("user_phone", userPhone)
     .like("question", `${LAST_MEMORY_ANSWER_PREFIX}%`)
     .order("created_at", { ascending: false })
@@ -666,6 +672,7 @@ export async function getLatestMemoryAnswerContext(userPhone: string) {
 
   if (error) throw error;
   if (!data?.document_id || !data?.question) return null;
+  if (isExpiredContext(data.created_at as string | null, SHORT_CONTEXT_TTL_MS)) return null;
 
   return {
     documentId: data.document_id as string,
@@ -693,7 +700,7 @@ export async function getLatestMemoryDocumentReference(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("document_id")
+    .select("document_id, created_at")
     .eq("user_phone", userPhone)
     .eq("answer", "active")
     .like("question", `${LAST_MEMORY_DOCUMENT_PREFIX}%`)
@@ -702,6 +709,7 @@ export async function getLatestMemoryDocumentReference(userPhone: string) {
     .maybeSingle();
 
   if (error) throw error;
+  if (isExpiredContext(data?.created_at as string | null, SOURCE_CONTEXT_TTL_MS)) return null;
   return typeof data?.document_id === "string" ? data.document_id : null;
 }
 
@@ -796,7 +804,7 @@ export async function getLatestPendingMemorySelection(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("id, question, answer")
+    .select("id, question, answer, created_at")
     .eq("user_phone", userPhone)
     .like("question", `${PENDING_MEMORY_SELECTION_PREFIX}%`)
     .order("created_at", { ascending: false })
@@ -805,6 +813,10 @@ export async function getLatestPendingMemorySelection(userPhone: string) {
 
   if (error) throw error;
   if (!data?.answer || !data?.question) return null;
+  if (isExpiredContext(data.created_at as string | null, SHORT_CONTEXT_TTL_MS)) {
+    await resolvePendingMemorySelection(data.id as string, "expired");
+    return null;
+  }
 
   const parsed = safeJsonParse(data.answer as string);
   const documentIds = Array.isArray(parsed?.documentIds)
@@ -849,7 +861,7 @@ export async function getLatestPendingCredentialLabel(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("id, document_id, question")
+    .select("id, document_id, question, created_at")
     .eq("user_phone", userPhone)
     .eq("answer", "pending_credential_label")
     .like("question", `${PENDING_CREDENTIAL_LABEL_PREFIX}%`)
@@ -859,6 +871,10 @@ export async function getLatestPendingCredentialLabel(userPhone: string) {
 
   if (error) throw error;
   if (!data?.document_id || !data?.question) return null;
+  if (isExpiredContext(data.created_at as string | null, SHORT_CONTEXT_TTL_MS)) {
+    await resolvePendingCredentialLabel(data.id as string, "expired");
+    return null;
+  }
 
   return {
     id: data.id as string,
@@ -903,7 +919,7 @@ export async function getLatestPendingSourceDocument(userPhone: string) {
 
   const { data, error } = await supabase
     .from("user_questions")
-    .select("id, document_id")
+    .select("id, document_id, created_at")
     .eq("user_phone", userPhone)
     .eq("answer", "pending_source_document")
     .like("question", `${PENDING_SOURCE_DOCUMENT_PREFIX}%`)
@@ -913,6 +929,10 @@ export async function getLatestPendingSourceDocument(userPhone: string) {
 
   if (error) throw error;
   if (!data?.document_id) return null;
+  if (isExpiredContext(data.created_at as string | null, SOURCE_CONTEXT_TTL_MS)) {
+    await resolvePendingSourceDocument(data.id as string, "expired");
+    return null;
+  }
 
   return {
     id: data.id as string,
@@ -1243,6 +1263,13 @@ function latestAnswerContextText(answer: string | null) {
   } catch {
     return null;
   }
+}
+
+function isExpiredContext(createdAt: string | null, ttlMs: number) {
+  if (!createdAt) return true;
+  const createdTime = new Date(createdAt).getTime();
+  if (!Number.isFinite(createdTime)) return true;
+  return Date.now() - createdTime > ttlMs;
 }
 
 function shouldRetryQuestionWithOriginalDocument(answer: string, question: string) {
