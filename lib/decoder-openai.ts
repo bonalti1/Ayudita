@@ -102,6 +102,8 @@ export async function explainFactsWithOpenAI(input: {
 export async function answerFollowUpWithOpenAI(input: {
   question: string;
   targetLanguage: "en" | "es";
+  documentType?: string | null;
+  documentCategory?: string | null;
   facts: DecoderFact[];
   explanations: DecoderExplanation[];
 }): Promise<{ body: string; model: string }> {
@@ -155,6 +157,8 @@ export async function answerFullDocumentQuestionWithOpenAI(input: {
   fileName: string;
   question: string;
   targetLanguage: "en" | "es";
+  documentType?: string | null;
+  documentCategory?: string | null;
   facts: DecoderFact[];
   explanations: DecoderExplanation[];
 }): Promise<{ body: string; model: string }> {
@@ -178,6 +182,8 @@ export async function answerFullDocumentQuestionWithOpenAI(input: {
             text: JSON.stringify({
               question: input.question,
               target_language: input.targetLanguage,
+              document_type: input.documentType ?? null,
+              document_category: input.documentCategory ?? null,
               saved_facts: input.facts.map((fact) => ({
                 fact_type: fact.fact_type,
                 label: fact.label,

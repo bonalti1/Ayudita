@@ -437,7 +437,7 @@ export async function answerDecoderDocumentQuestion(input: {
   }
 
   const targetLanguage = detectQuestionLanguage(input.question);
-  const shouldUseOriginalFirst = shouldUseOriginalDocumentFirst(input.question);
+  const shouldUseOriginalFirst = shouldUseOriginalDocumentFirst(input.question, document);
   let body = "";
   let model = "";
 
@@ -451,11 +451,11 @@ export async function answerDecoderDocumentQuestion(input: {
 
   if (!body) {
     const factsOnlyAnswer = await answerFollowUpWithOpenAI({
-    question: input.question,
-    targetLanguage,
-    facts: document.facts,
-    explanations: document.explanations
-  });
+      question: input.question,
+      targetLanguage,
+      facts: document.facts,
+      explanations: document.explanations
+    });
     body = factsOnlyAnswer.body;
     model = factsOnlyAnswer.model;
   }
@@ -499,6 +499,8 @@ async function answerQuestionFromOriginalDocument(
     fileName: document.storage_path.split("/").pop() ?? "document",
     question,
     targetLanguage,
+    documentType: document.document_type,
+    documentCategory: document.document_category,
     facts: document.facts,
     explanations: document.explanations
   });
@@ -1246,10 +1248,28 @@ function detectQuestionLanguage(question: string): "en" | "es" {
   return "es";
 }
 
-function shouldUseOriginalDocumentFirst(question: string) {
+function shouldUseOriginalDocumentFirst(question: string, document: DecoderDocumentDetail) {
   const normalizedQuestion = normalizeSearchText(question);
 
-  return /\b(where|what page|which page|page number|location|locate|find the line|where does it say|where does it mention|where in|donde|dónde|en que pagina|en qué página|pagina|página|donde dice|dónde dice|donde menciona|dónde menciona|ubicacion|ubicación|seccion|sección)\b/.test(
+  if (
+    /\b(where|what page|which page|page number|location|locate|find the line|where does it say|where does it mention|where in|donde|dónde|en que pagina|en qué página|pagina|página|donde dice|dónde dice|donde menciona|dónde menciona|ubicacion|ubicación|seccion|sección)\b/.test(
+      normalizedQuestion
+    )
+  ) {
+    return true;
+  }
+
+  return isContractDocument(document) && looksLikeContractQuestion(normalizedQuestion);
+}
+
+function isContractDocument(document: DecoderDocumentDetail) {
+  return /\b(contract|agreement|contrato|acuerdo)\b/.test(
+    normalizeSearchText(`${document.document_type ?? ""} ${document.document_category ?? ""}`)
+  );
+}
+
+function looksLikeContractQuestion(normalizedQuestion: string) {
+  return /\b(scope|allowance|allowances|included|include|excludes|excluded|exclusion|upgrade|selection|selections|ceiling|ceilings|cathedral|design|designs|payment|schedule|change order|warranty|responsibility|responsibilities|builder|owner|client|project|specification|specifications|alcance|incluye|incluido|excluye|excluido|exclusion|exclusión|mejora|seleccion|selección|techo|techos|catedral|catedrales|diseno|diseño|disenos|diseños|pago|calendario|orden de cambio|garantia|garantía|responsabilidad|constructor|dueno|dueño|cliente|proyecto|especificacion|especificación)\b/.test(
     normalizedQuestion
   );
 }
